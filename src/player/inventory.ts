@@ -78,9 +78,10 @@ export const MAX_WEIGHT = 38;
 export class Inventory {
   items: Record<string, number> = {};
 
-  add(name: string, qty = 1): boolean {
+  /** `capacity` lets porters and worn-gear weight adjust the real limit. */
+  add(name: string, qty = 1, capacity = MAX_WEIGHT): boolean {
     const def = ITEMS[name] ?? { weight: 0.4 };
-    if (this.weight() + def.weight * qty > MAX_WEIGHT) return false;
+    if (this.weight() + def.weight * qty > capacity) return false;
     this.items[name] = (this.items[name] ?? 0) + qty;
     return true;
   }

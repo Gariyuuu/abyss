@@ -42,11 +42,47 @@ only cite the layer above it:
    leave**: break a seal and two civilizations meet; kill a floor's only predator and
    the herds bloom and strip the flora; kill a ruler and succession politics follow you.
 
+## Companions read over your shoulder
+
+Living settlements keep a hiring fire. Everyone there comes from a real generated
+culture, and that culture travels with them:
+
+- a **porter** carries +12 pack weight,
+- a **warden** physically interposes between you and whatever is charging,
+- a **hunter** roughly doubles how fast the bestiary fills in and names weaknesses aloud,
+- a **scholar** reads every document you find **through their own people's history**.
+
+The scholar is the one that matters. Standing over the same chronicle, a scholar
+whose people traded with its authors says *"their record-keeping was honest by the
+standards of the deep"*; one whose people fought them says *"we have their version in
+our own archives, and it does not say what this says"*; one reading their **own**
+people's account says *"it reads true to me — and you should weigh that, because I am
+the last person able to read it coldly."* You get a second source for free, and you
+have to weigh its bias too.
+
+Companions eat your food when you rest, and they die permanently. When one does, the
+world records it and word travels: the hiring fires get quieter and the price goes up.
+
+## Equipment comes from military traditions
+
+Armor isn't a loot table. Each piece is generated from the *recorded military
+tradition* of the culture whose floor you found it on — a people the simulation says
+"fought in phalanxes of long spears suited to corridor war" yield corridor-guard
+plate: +10 armor, 1.5× sprint stamina drain, and loud. Loud matters, because eyeless
+and echo-hunting creatures notice you from further away in it. Lanterns trade light
+radius against oil burn; charms follow their culture's actual religious tenet.
+
+## Sound
+
+All audio is synthesized at runtime with WebAudio — no asset files. The ambient bed is
+parameterized per region archetype (volcanic rumbles, crystal rings, ocean washes,
+caverns drip in stereo), and drops in pitch as you descend. `M` toggles it.
+
 ## Playing
 
 WASD/mouse third-person; Shift run, Space jump / hold into a ledge to climb, Q dodge,
 LMB attack, RMB block/aim, 1/2/3 sword/bow/aether, T torch, E interact, C camp,
-I pack/crafting, J codex. Expeditions are prepared, not teleported: food, water, torch
+I pack/crafting/gear/company, J codex, M sound. Expeditions are prepared, not teleported: food, water, torch
 oil, arrows, a camp kit — the stair down warns you what you're carrying. Creatures are
 learned by watching (sighted → observed → studied → understood); their weaknesses
 (light, flanks, sound, fire) are mechanically real.

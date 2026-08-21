@@ -7,6 +7,8 @@
 import * as THREE from "three";
 import { AABB } from "../world/structures";
 import { Creature } from "../ai/creature-ai";
+import { Loadout } from "./equipment";
+import { Audio } from "../audio/audio";
 
 export interface WorldQuery {
   heightAt(x: number, z: number): number;
@@ -40,6 +42,9 @@ export class Player {
   blocking = false;
   aiming = false;
   dead = false;
+  /** Worn gear; its stats feed movement, light, defense and how loud you are. */
+  loadout = new Loadout();
+  audio: Audio | null = null;
 
   private grounded = false;
   private climbing = false;
@@ -145,6 +150,7 @@ export class Player {
       this.stamina -= 10;
       this.attackCd = 0.55;
       this.animateSwing();
+      this.audio?.swing();
       for (const c of this.world.creatures) {
         if (c.state === "dead") continue;
         const to = c.mesh.position.clone().sub(this.group.position); to.y = 0;
@@ -153,15 +159,18 @@ export class Player {
           const creatureFacing = new THREE.Vector3(Math.cos(-c.mesh.rotation.y), 0, Math.sin(-c.mesh.rotation.y));
           const fromFlank = Math.abs(creatureFacing.dot(to)) < 0.5;
           c.takeDamage(26, fromFlank, 0);
+          this.audio?.hit(fromFlank);
         }
       }
     } else if (this.weapon === "bow") {
       if (!this.events.onArrowFired()) { this.events.onToast("quiver empty — craft arrows from flint and bone"); return; }
       this.attackCd = 0.9;
+      this.audio?.bow();
       this.fireProjectile(46, 60);
     } else {
       if (!this.events.onManaSpent(12)) { this.events.onToast("the aether will not answer — rest to recover"); return; }
       this.attackCd = 0.8;
+      this.audio?.aether();
       this.fireProjectile(34, 40, true);
     }
   }
@@ -185,6 +194,7 @@ export class Player {
     if (best) {
       const bonus = aether && best.c.species.weaknessKind === "light" ? 1.8 : 1;
       best.c.takeDamage(damage * bonus, false, 0);
+      this.audio?.hit(bonus > 1);
     }
   }
 
@@ -225,7 +235,8 @@ export class Player {
       this.velocity.x = dir.x * speed;
       this.velocity.z = dir.z * speed;
     }
-    if (running) this.stamina = Math.max(0, this.stamina - dt * 9);
+    // Armor makes running expensive — the heavier the plate, the shorter the sprint.
+    if (running) this.stamina = Math.max(0, this.stamina - dt * 9 * this.loadout.drain());
     else this.stamina = Math.min(100, this.stamina + dt * (this.hunger > 20 ? 12 : 4));
     this.mana = Math.min(this.maxMana, this.mana + dt * 0.8);
 
@@ -237,11 +248,15 @@ export class Player {
       if (this.hp <= 0) this.die(this.hunger <= 0 ? "starvation, far from any table" : "thirst, in a world made of water");
     }
     if (this.torchOn) {
-      this.torchFuel = Math.max(0, this.torchFuel - dt * 0.45);
+      this.torchFuel = Math.max(0, this.torchFuel - dt * 0.45 * this.loadout.fuelBurn());
       if (this.torchFuel <= 0) { this.torchOn = false; this.events.onToast("the torch gutters out"); }
     }
+    const radius = this.loadout.lightRadius();
     this.torchLight.visible = this.torchOn;
-    this.torchLight.intensity = 55 * (0.75 + 0.25 * Math.sin(performance.now() * 0.01)) * Math.min(1, this.torchFuel / 10 + 0.6);
+    this.torchLight.distance = 34 * radius;
+    this.torchLight.intensity = 55 * radius
+      * (0.75 + 0.25 * Math.sin(performance.now() * 0.01))
+      * Math.min(1, this.torchFuel / 10 + 0.6);
 
     // Gravity / swim.
     if (inWater) {
@@ -336,7 +351,10 @@ export class Player {
   damage(amount: number, cause: string) {
     if (this.dead) return;
     if (this.blocking) amount = Math.round(amount * 0.3);
+    // Worn armor soaks a flat amount, but never trivializes a hit.
+    amount = Math.max(1, Math.round(amount - this.loadout.defense()));
     this.hp -= amount;
+    this.audio?.hurt();
     this.events.onDamaged(cause);
     if (this.hp <= 0) this.die(cause);
   }

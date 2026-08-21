@@ -17,9 +17,12 @@ import {
 } from "./structures";
 import { Ledger } from "../sim/ledger";
 import { personName } from "../core/names";
+import { Companion, generateCandidate } from "../player/companions";
+import { Gear, generateArmor, generateLight, generateCharm } from "../player/equipment";
 
 export type InteractKind =
-  | "doc" | "gate-down" | "gate-up" | "resource" | "chest" | "npc" | "camp-remnant" | "seal";
+  | "doc" | "gate-down" | "gate-up" | "resource" | "chest" | "npc"
+  | "camp-remnant" | "seal" | "recruit";
 
 export interface Interactable {
   id: string;
@@ -31,6 +34,8 @@ export interface Interactable {
   resource?: string;
   npcText?: { name: string; lines: string[] };
   loot?: { item: string; qty: number }[];
+  gearLoot?: Gear[];
+  candidates?: Companion[];
   object?: THREE.Object3D;
 }
 
@@ -239,6 +244,26 @@ export function populate(region: Region, terrain: TerrainData, ledger: Ledger): 
         },
       });
     }
+
+    // A hiring post: people from this culture willing to go down with you.
+    const hr = sr.fork("hire");
+    const candidates: Companion[] = [];
+    const nCand = hr.int(2, 3);
+    for (let i = 0; i < nCand; i++) {
+      const c = generateCandidate(hr.fork("c" + i), civ, region.depth, i);
+      if (ledger.has(`hired:${c.id}`) || ledger.has(`comp-dead:${c.id}`)) continue;
+      candidates.push(c);
+    }
+    if (candidates.length) {
+      const hp = center.clone().add(new THREE.Vector3(sr.range(-12, 12), 0, sr.range(-12, 12)));
+      hp.y = groundY(hp.x, hp.z);
+      place(campfireProp(true), hp);
+      interactables.push({
+        id: `recruit:${region.depth}`, kind: "recruit", pos: hp.clone(), radius: 3,
+        prompt: `the hiring fire — ${candidates.length} of the ${civ.demonym} will go down with you`,
+        candidates,
+      });
+    }
   }
 
   // ---- Resource nodes. ----
@@ -276,6 +301,15 @@ export function populate(region: Region, terrain: TerrainData, ledger: Ledger): 
     place(chest, p);
     const item = cr.pick(ARTIFACT_ITEMS);
     const originCiv = civ ?? null;
+    // Roughly half of chests hold real equipment, generated from this culture's
+    // own military tradition / religion rather than from a static loot table.
+    const gearLoot: Gear[] = [];
+    if (cr.chance(0.55)) {
+      const roll = cr.next();
+      if (originCiv && roll < 0.45) gearLoot.push(generateArmor(cr.fork("g" + i), originCiv, region.depth, i));
+      else if (roll < 0.78) gearLoot.push(generateLight(cr.fork("l" + i), originCiv, region.depth, i));
+      else if (originCiv) gearLoot.push(generateCharm(cr.fork("ch" + i), originCiv, region.depth, i));
+    }
     interactables.push({
       id, kind: "chest", pos: p.clone(), radius: 2.2,
       prompt: `open the ${originCiv ? originCiv.name + "-work" : "old"} chest`,
@@ -283,6 +317,7 @@ export function populate(region: Region, terrain: TerrainData, ledger: Ledger): 
         { item: originCiv ? `${item} (${originCiv.name} make)` : item, qty: 1 },
         ...(cr.chance(0.5) ? [{ item: "old rations", qty: cr.int(1, 3) }] : []),
       ],
+      gearLoot,
       object: chest,
     });
   }

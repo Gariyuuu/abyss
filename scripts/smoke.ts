@@ -86,5 +86,33 @@ if (r12.builderCiv) {
 console.log("Species:", r12.species.map((s) => `${s.name} [${s.diet}]`).join(", "));
 console.log("\nSample doc:\n" + (r12.docs[0] ? `${r12.docs[0].title}\n${r12.docs[0].body}\n(${r12.docs[0].source})` : "none"));
 
+// 7. Fuzz: many seeds × deep floors must all generate without throwing.
+// (A flood event on a river-less floor once crashed generation here; one seed
+// was never going to catch it.)
+const SEEDS = [
+  "the-first-descent", "scholar-run", "aaa", "bbb", "ccc", "ddd", "eee",
+  "abyss-1", "abyss-2", "kingdom", "the deep", "x", "9174", "salt-and-lamplight",
+];
+let fuzzRegions = 0;
+const crashes: string[] = [];
+for (const s of SEEDS) {
+  const h = new History(s);
+  for (const d of [1, 2, 3, 5, 8, 11, 13, 17, 19, 23, 29, 31, 37, 41, 47, 53, 61, 73]) {
+    try {
+      const r = generateRegion(h, d);
+      // Touch the fields the renderer will touch, so lazy crashes surface here.
+      void r.purpose.length; void r.species.length; void r.docs.length;
+      void r.mysteries.join(""); void r.inhabitantsDesc.length;
+      for (const doc of r.docs) void doc.body.length;
+      for (const sp of r.species) void sp.foodDesc.length;
+      fuzzRegions++;
+    } catch (e) {
+      crashes.push(`seed "${s}" depth ${d}: ${(e as Error).message}`);
+    }
+  }
+}
+check(`fuzz: ${SEEDS.length} seeds × 18 depths generate cleanly`, crashes.length === 0,
+  crashes.length ? crashes.slice(0, 3).join(" | ") : `${fuzzRegions} regions`);
+
 console.log(failures ? `\n${failures} FAILURES` : "\nALL CHECKS PASSED");
 process.exit(failures ? 1 : 0);

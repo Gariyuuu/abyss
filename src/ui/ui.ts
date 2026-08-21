@@ -8,6 +8,8 @@ import { Species, speciesFieldSummary } from "../gen/creatures";
 import { DocSpec } from "../gen/lore";
 import { Player } from "../player/player";
 import { Inventory, ITEMS, RECIPES, MAX_WEIGHT, Recipe } from "../player/inventory";
+import { Companion, ROLE_INFO } from "../player/companions";
+import { Loadout, Gear, Slot } from "../player/equipment";
 import { observationLevel } from "../ai/creature-ai";
 import { CodexState, Ledger } from "../sim/ledger";
 import { History } from "../gen/history";
@@ -28,6 +30,9 @@ export class UI {
     private getLedger: () => Ledger,
     private getVisitedRegions: () => Region[],
     private atCamp: () => boolean,
+    private getCompanions: () => Companion[],
+    private getLoadout: () => Loadout,
+    private getCarryBonus: () => number,
   ) {}
 
   // ------------------------------------------------------------------ HUD ----
@@ -123,11 +128,24 @@ export class UI {
     document.exitPointerLock?.();
   }
 
-  showDoc(doc: DocSpec) {
+  showDoc(doc: DocSpec, reading?: { speaker: string; text: string } | null) {
     $("doc-title").textContent = doc.title;
     $("doc-sub").textContent = doc.sub;
     $("doc-body").textContent = doc.body;
-    $("doc-source").textContent = "⌘ " + doc.source;
+    const src = $("doc-source");
+    src.innerHTML = "";
+    const line = document.createElement("div");
+    line.textContent = "⌘ " + doc.source;
+    src.appendChild(line);
+    // A scholar companion's own reading of the same document, biased by their culture.
+    if (reading) {
+      const box = document.createElement("div");
+      box.className = "reading";
+      box.innerHTML = `<div class="reading-who">${reading.speaker} reads it over your shoulder</div>` +
+        `<div class="reading-text"></div>`;
+      (box.querySelector(".reading-text") as HTMLElement).textContent = reading.text;
+      src.appendChild(box);
+    }
     this.open("panel-doc");
   }
 
@@ -140,18 +158,27 @@ export class UI {
   renderInventory() {
     const inv = this.getInventory();
     const p = this.getPlayer();
-    $("inv-weight").textContent = `${inv.weight()} / ${MAX_WEIGHT} weight — deeper means carrying your survival on your back`;
+    const load = this.getLoadout();
+    const cap = Math.round((MAX_WEIGHT + this.getCarryBonus() - load.weight()) * 10) / 10;
+    const bonus = this.getCarryBonus();
+    $("inv-weight").textContent =
+      `${inv.weight()} / ${cap} weight` +
+      (bonus ? ` (porters carry +${bonus}` + (load.weight() ? `, gear costs ${load.weight()}` : "") + ")"
+             : load.weight() ? ` (gear costs ${load.weight()})` : "") +
+      " — deeper means carrying your survival on your back";
     const tabs = $("inv-tabs");
     tabs.innerHTML = "";
-    for (const t of ["carry", "craft"]) {
+    for (const [t, label] of [["carry", "Pack"], ["craft", "Craft"], ["gear", "Gear"], ["party", "Company"]]) {
       const b = document.createElement("button");
-      b.textContent = t === "carry" ? "Pack" : "Craft";
+      b.textContent = label;
       b.className = this.invTab === t ? "active" : "";
       b.onclick = () => { this.invTab = t; this.renderInventory(); };
       tabs.appendChild(b);
     }
     const list = $("inv-list");
     list.innerHTML = "";
+    if (this.invTab === "gear") { this.renderGear(list); return; }
+    if (this.invTab === "party") { this.renderParty(list); return; }
     if (this.invTab === "carry") {
       const entries = Object.entries(inv.items).sort();
       if (!entries.length) list.innerHTML = `<p class="sub">The pack is empty. That is how people die down here.</p>`;
@@ -197,6 +224,87 @@ export class UI {
         list.appendChild(row);
       }
     }
+  }
+
+  private renderGear(list: HTMLElement) {
+    const load = this.getLoadout();
+    const stat = (g: Gear) => [
+      g.defense ? `+${g.defense} armor` : null,
+      `${g.weight} weight`,
+      g.drain !== 1 ? `${g.drain > 1 ? "−" : "+"}${Math.round(Math.abs(1 - g.drain) * 100)}% sprint` : null,
+      g.noise !== 1 ? (g.noise > 1 ? "loud" : "quiet") : null,
+      g.lightRadius !== 1 ? `${Math.round((g.lightRadius - 1) * 100)}% light reach` : null,
+      g.fuelBurn !== 1 ? `${g.fuelBurn > 1 ? "+" : "−"}${Math.round(Math.abs(1 - g.fuelBurn) * 100)}% oil burn` : null,
+    ].filter(Boolean).join(" · ");
+
+    const head = document.createElement("p");
+    head.className = "sub";
+    head.textContent = `Worn: ${load.defense()} armor · sprint ×${load.drain().toFixed(2)} · ` +
+      `${load.noise() > 1 ? "loud" : load.noise() < 1 ? "quiet" : "ordinary"} · ` +
+      `light ×${load.lightRadius().toFixed(2)} · oil ×${load.fuelBurn().toFixed(2)}`;
+    list.appendChild(head);
+
+    for (const slot of ["body", "light", "charm"] as Slot[]) {
+      const worn = load.get(slot);
+      const row = document.createElement("div");
+      row.className = "inv-row";
+      row.innerHTML = worn
+        ? `<span><b>${slot}</b> — ${worn.name}<span class="equipped-tag">WORN</span><br/>
+             <span class="qty">${stat(worn)}</span><br/><span class="qty">${worn.origin}</span></span>`
+        : `<span><b>${slot}</b> — <span class="qty">nothing worn</span></span>`;
+      if (worn) {
+        const btn = document.createElement("button");
+        btn.textContent = "remove";
+        btn.onclick = () => { load.unequip(slot); this.renderInventory(); };
+        row.appendChild(btn);
+      }
+      list.appendChild(row);
+    }
+
+    if (load.stash.length) {
+      const h = document.createElement("h2");
+      h.textContent = "Carried, not worn";
+      list.appendChild(h);
+      for (const g of load.stash) {
+        const row = document.createElement("div");
+        row.className = "inv-row";
+        row.innerHTML = `<span>${g.name}<br/><span class="qty">${stat(g)}</span><br/>
+          <span class="qty">${g.origin}</span></span>`;
+        const btn = document.createElement("button");
+        btn.textContent = "wear";
+        btn.onclick = () => { load.equip(g); this.renderInventory(); };
+        row.appendChild(btn);
+        list.appendChild(row);
+      }
+    }
+  }
+
+  private renderParty(list: HTMLElement) {
+    const comps = this.getCompanions();
+    if (!comps.length) {
+      list.innerHTML = `<p class="sub">You are alone. Living settlements keep a hiring fire — ` +
+        `a porter carries what you cannot, a warden stands where you would have been hit, ` +
+        `a scholar reads every inscription through their own people's history, and a hunter names what is stalking you.</p>`;
+      return;
+    }
+    const history = this.getHistory();
+    for (const c of comps) {
+      const civ = c.civId ? history.civById(c.civId) : null;
+      const row = document.createElement("div");
+      row.className = "inv-row";
+      const hpPct = Math.max(0, Math.round((c.hp / c.maxHp) * 100));
+      row.innerHTML = `<span><b>${c.name}</b> — ${ROLE_INFO[c.role].label}` +
+        (c.alive ? `` : ` <span class="equipped-tag" style="color:oklch(60% 0.16 25)">DEAD</span>`) +
+        `<br/><span class="qty">${civ ? `of ${civ.name}, ${civ.species}` : "origin unknown"} · ` +
+        `hired at depth ${c.hiredAtDepth}${c.alive ? ` · ${hpPct}% condition` : ""}</span>` +
+        `<br/><span class="qty">${ROLE_INFO[c.role].blurb}</span>` +
+        `<br/><span class="qty">"${c.motive}"</span></span>`;
+      list.appendChild(row);
+    }
+    const note = document.createElement("p");
+    note.className = "sub";
+    note.textContent = "Everyone at the fire eats when you rest. Hungry hands remember it.";
+    list.appendChild(note);
   }
 
   private tryCraft(r: Recipe): boolean {

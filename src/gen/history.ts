@@ -474,8 +474,12 @@ export class History {
             detail = `a spore-plague rose from the lower vents in the reign of ${ruler}; ${deaths} were carried to the deep graves`;
             break;
           case "flood": {
-            const rv = er.pick(rivers);
-            detail = `the river ${rv.name} rose without warning and drowned the lower galleries at depth ${depth}; ${deaths} drowned; the survivors moved one floor up`;
+            // A floor with no named river can still drown: the water comes up
+            // through the rock instead, which the records find more frightening.
+            const rv = rivers.length ? er.pick(rivers) : null;
+            detail = rv
+              ? `the river ${rv.name} rose without warning and drowned the lower galleries at depth ${depth}; ${deaths} drowned; the survivors moved one floor up`
+              : `water rose from below with no river to blame it on, filling the lower galleries at depth ${depth}; ${deaths} drowned; the pumps ran for a generation afterward`;
             break;
           }
           case "regicide":

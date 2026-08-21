@@ -115,7 +115,10 @@ export class Creature {
     return false;
   }
 
-  update(dt: number, playerPos: THREE.Vector3, torchOn: boolean, playerBlocking: boolean) {
+  update(
+    dt: number, playerPos: THREE.Vector3, torchOn: boolean,
+    playerBlocking: boolean, playerNoise = 1,
+  ) {
     if (this.state === "dead") return;
     const sp = this.species;
     const pos = this.mesh.position;
@@ -184,9 +187,14 @@ export class Creature {
       }
     }
 
-    // Aggro check from idle/wander.
-    if ((this.state === "idle" || this.state === "wander") && dist < 22) {
-      if (sp.aggro > 0.4 && !lightRepel && Math.random() < sp.aggro * dt * 1.2) this.state = "stalk";
+    // Aggro check from idle/wander. Creatures that hunt by echo — the eyeless and
+    // the sound-weak — notice loud armor from further off, so what you wear
+    // changes who finds you.
+    const hearsByEcho = sp.plan.eyes === 0 || sp.weaknessKind === "sound";
+    const noticeRange = hearsByEcho ? 22 * playerNoise : 22;
+    if ((this.state === "idle" || this.state === "wander") && dist < noticeRange) {
+      const alertness = sp.aggro * (hearsByEcho ? playerNoise : 1);
+      if (sp.aggro > 0.4 && !lightRepel && Math.random() < alertness * dt * 1.2) this.state = "stalk";
       else if (sp.aggro <= 0.15 && dist < 7) this.state = "flee";
     }
 

@@ -8,12 +8,18 @@ import { Region, generateRegion } from "./gen/regions";
 import { buildTerrain, TerrainData } from "./world/terrain";
 import { populate, PopulatedRegion, Interactable } from "./world/populate";
 import { Player } from "./player/player";
-import { Inventory, startingPack, surfaceResupply, ITEMS } from "./player/inventory";
+import { Inventory, startingPack, surfaceResupply, ITEMS, MAX_WEIGHT } from "./player/inventory";
 import { Creature } from "./ai/creature-ai";
 import { Species } from "./gen/creatures";
 import { Ledger, CodexState, saveGame, loadGame, clearSave, SaveData } from "./sim/ledger";
 import { UI } from "./ui/ui";
 import { rngFor } from "./core/rng";
+import {
+  Companion, CompanionActor, ROLE_INFO, hireCost, scholarReading, hunterReading,
+  arrivalRemark, carryBonus, observationMultiplier, scholarOf, hunterOf,
+} from "./player/companions";
+import { Loadout, Gear } from "./player/equipment";
+import { Audio, AmbienceKind } from "./audio/audio";
 
 const canvasHost = document.getElementById("app")!;
 
@@ -31,6 +37,11 @@ class Game {
   gameTime = 8; // hours
   depth = 1;
   campDepth = 1;
+
+  companions: Companion[] = [];
+  companionActors: CompanionActor[] = [];
+  loadout = new Loadout();
+  audio = new Audio();
 
   region: Region | null = null;
   terrain: TerrainData | null = null;
@@ -75,6 +86,8 @@ class Game {
     this.campDepth = 1;
     this.ledger = new Ledger();
     this.codex = { docsRead: [], docsMeta: [], speciesSeen: {}, civsMet: [], regionsVisited: [] };
+    this.companions = [];
+    this.loadout = new Loadout();
     this.startCommon();
     this.ui.toast("The rope ends here. Below is nobody's map.", true);
   }
@@ -91,6 +104,8 @@ class Game {
     this.ledger.flags = save.ledgerFlags;
     this.ledger.dynamicEvents = save.dynamicEvents;
     this.codex = save.codex;
+    this.companions = (save.companions as Companion[]) ?? [];
+    this.loadout = Loadout.restore(save.loadout as never);
     this.startCommon();
     const p = this.player;
     p.hp = save.hp; p.stamina = save.stamina; p.mana = save.mana;
@@ -120,6 +135,8 @@ class Game {
       get colliders() { return self.populated ? self.populated.colliders : []; },
       get creatures() { return self.creatures; },
     };
+    this.player.loadout = this.loadout;
+    this.player.audio = this.audio;
     this.scene.add(this.player.group);
     this.player.attachInput(this.renderer.domElement);
 
@@ -132,6 +149,9 @@ class Game {
       () => this.ledger,
       () => [...this.visitedRegions.values()],
       () => this.nearCampfire(),
+      () => this.companions,
+      () => this.loadout,
+      () => carryBonus(this.companions),
     );
     this.bindKeys();
     this.loadRegion(this.depth, true);
@@ -160,6 +180,10 @@ class Game {
         else if (!this.ui.activePanel) this.interact();
       }
       if (e.code === "Escape") this.ui.closeAll();
+      if (e.code === "KeyM") {
+        this.audio.setMuted(!this.audio.muted);
+        this.ui.toast(this.audio.muted ? "sound off" : "sound on");
+      }
     });
   }
 
@@ -197,13 +221,23 @@ class Game {
       onPlayerHit: (dmg: number, by: string) => this.player.damage(dmg, `the ${by}`),
       onObserve: (id: string, amt: number) => {
         const before = this.codex.speciesSeen[id] ?? 0;
-        this.codex.speciesSeen[id] = before + amt;
+        // A hunter companion reads tracks and behavior for you.
+        this.codex.speciesSeen[id] = before + amt * observationMultiplier(this.companions);
         const lvlB = Math.floor(before >= 6 ? 3 : before >= 3 ? 2 : before >= 1 ? 1 : 0);
         const after = this.codex.speciesSeen[id];
         const lvlA = Math.floor(after >= 6 ? 3 : after >= 3 ? 2 : after >= 1 ? 1 : 0);
         if (lvlA > lvlB) {
           const sp = region.species.find((s) => s.id === id);
-          if (sp) this.ui.toast(`bestiary: the ${sp.name} — ${["sighted", "now observed", "now studied", "now understood"][lvlA]}`, true);
+          if (sp) {
+            this.ui.toast(`bestiary: the ${sp.name} — ${["sighted", "now observed", "now studied", "now understood"][lvlA]}`, true);
+            this.audio.discovery();
+            // At the point the weakness becomes knowable, a hunter says it aloud.
+            const hunter = hunterOf(this.companions);
+            if (hunter && lvlA === 2) {
+              const line = hunterReading(hunter, sp);
+              if (line) this.ui.toast(line);
+            }
+          }
         }
       },
       onDeath: (c: Creature) => this.onCreatureDeath(c),
@@ -238,6 +272,25 @@ class Game {
       this.ui.toast(`Something here has emptied the food web. The locals call it ${sp.name}.`, true);
     }
 
+    // Living companions come down with you and re-enter the world at your side.
+    this.companionActors = [];
+    for (const comp of this.companions) {
+      if (!comp.alive) continue;
+      const civ = comp.civId ? this.history.civById(comp.civId) : null;
+      const start = this.populated.spawnPoint.clone().add(new THREE.Vector3(1.8, 0, 1.4));
+      start.y = this.terrain.heightAt(start.x, start.z);
+      const actor = new CompanionActor(comp, civ, start, {
+        heightAt: (x, z) => this.terrain!.heightAt(x, z),
+        onSpeak: (line) => this.ui.toast(line),
+        onDeath: (c) => this.onCompanionDeath(c),
+      });
+      this.companionActors.push(actor);
+      this.regionGroup.add(actor.mesh);
+    }
+
+    // Ambience follows the region archetype; the descent tone plays on arrival.
+    this.audio.setAmbience(region.kind as AmbienceKind, depth);
+
     // Settlement fires count as camps; forget player fires from other floors.
     this.campfires = [];
     for (const i of this.populated.interactables) {
@@ -252,6 +305,12 @@ class Game {
     this.ui.setRegionPlate(region);
     if (announce) {
       this.ui.showTransition(depth, region.name, region.epithet, region.purpose);
+      this.audio.descend();
+      // A companion whose people knew this depth says so.
+      for (const c of this.companions) {
+        const remark = arrivalRemark(c, depth, region.name, this.history);
+        if (remark) { this.ui.toast(remark); break; }
+      }
       if (region.rivers.length) {
         const rv = region.rivers[0];
         const seenBefore = rv.depths.some((d) => d < depth && this.codex.regionsVisited.includes(d));
@@ -287,6 +346,68 @@ class Game {
 
   // ------------------------------------------------------------- interaction ----
 
+  /** Real carry limit: base, plus porters, minus the weight of gear you own. */
+  private capacity(): number {
+    return MAX_WEIGHT + carryBonus(this.companions) - this.loadout.weight();
+  }
+
+  private showRecruit(it: Interactable) {
+    const civ = this.region?.builderCiv;
+    const avail = (it.candidates ?? []).filter(
+      (c) => !this.companions.some((h) => h.id === c.id),
+    );
+    const priceUp = this.ledger.has("hiring-harder");
+    this.ui.showCamp({
+      title: "The hiring fire",
+      sub: avail.length
+        ? `${civ ? `${civ.demonym} ` : ""}who will go below with you. They eat your food and they do not come back on their own.` +
+          (priceUp ? " Word of your last hire's death has traveled; they want more up front." : "")
+        : "Nobody left here is willing.",
+      actions: [
+        ...avail.map((c) => {
+          const cost = hireCost(c.role).map((x) => ({ ...x, qty: x.qty + (priceUp ? 1 : 0) }));
+          const costStr = cost.map((x) => `${x.qty}× ${x.item}`).join(", ");
+          return {
+            label: `${c.name} — ${ROLE_INFO[c.role].label}`,
+            desc: `${ROLE_INFO[c.role].blurb}. Asks ${costStr}. "${c.motive}"`,
+            fn: () => {
+              const canPay = cost.every((x) => this.inventory.count(x.item) >= x.qty);
+              if (!canPay) { this.ui.toast(`you cannot cover ${costStr}`); return; }
+              for (const x of cost) this.inventory.remove(x.item, x.qty);
+              this.companions.push(c);
+              this.ledger.set(`hired:${c.id}`, this.gameTime);
+              this.ui.toast(`${c.name} the ${ROLE_INFO[c.role].label.toLowerCase()} joins the expedition`, true);
+              this.ui.closeAll();
+              this.loadRegion(this.depth, false); // re-enter so they physically appear
+            },
+          };
+        }),
+        ...(this.companions.filter((c) => c.alive).map((c) => ({
+          label: `Release ${c.name}`,
+          desc: `They stay here and find their own way home. This cannot be undone on this floor.`,
+          fn: () => {
+            this.companions = this.companions.filter((x) => x.id !== c.id);
+            this.ui.toast(`${c.name} stays behind. They do not say goodbye.`);
+            this.ui.closeAll();
+            this.loadRegion(this.depth, false);
+          },
+        }))),
+        { label: "Leave the fire", desc: "go down alone", fn: () => this.ui.closeAll() },
+      ],
+    });
+  }
+
+  private onCompanionDeath(comp: Companion) {
+    this.ledger.set(`comp-dead:${comp.id}`, this.gameTime, String(this.depth));
+    this.ui.toast(`${comp.name} is dead at depth ${this.depth}.`, true);
+    this.audio.death();
+    const civ = comp.civId ? this.history.civById(comp.civId) : null;
+    this.ledger.addEvent(this.gameTime, this.depth,
+      `${comp.name}${civ ? ` of ${civ.name}` : ""} died at depth ${this.depth}, hired by a climber from above. ` +
+      `Their people will hear of it before you next stand at their fire.`);
+    this.save();
+  }
+
   private nearestInteractable(): Interactable | null {
     if (!this.populated) return null;
     const p = this.player.group.position;
@@ -317,7 +438,11 @@ class Game {
     switch (it.kind) {
       case "doc": {
         const doc = it.doc!;
-        this.ui.showDoc(doc);
+        // If a scholar is with you, they read it too — through their own people's
+        // relationship to whoever wrote it. A second biased source, for free.
+        const scholar = scholarOf(this.companions);
+        const reading = scholar ? scholarReading(scholar, doc, this.history) : null;
+        this.ui.showDoc(doc, reading);
         if (!this.codex.docsRead.includes(doc.id)) {
           this.codex.docsRead.push(doc.id);
           this.codex.docsMeta.push({ id: doc.id, title: doc.title, body: doc.body, source: doc.source, depth: this.depth });
@@ -339,22 +464,32 @@ class Game {
         break;
       }
       case "resource": {
-        if (this.inventory.add(it.resource!, 1)) {
+        if (this.inventory.add(it.resource!, 1, this.capacity())) {
           this.ledger.set(`harvested:${this.depth}:${it.id.split(":")[2]}`, this.gameTime);
           it.object?.parent?.remove(it.object);
           this.populated!.interactables = this.populated!.interactables.filter((x) => x !== it);
           this.ui.toast(`+1 ${it.resource}`);
+          this.audio.pickup();
         } else this.ui.toast("pack too heavy — drop or use something first");
         break;
       }
       case "chest":
       case "camp-remnant": {
         for (const l of it.loot ?? []) {
-          if (this.inventory.add(l.item, l.qty)) this.ui.toast(`+${l.qty} ${l.item}`);
+          if (this.inventory.add(l.item, l.qty, this.capacity())) this.ui.toast(`+${l.qty} ${l.item}`);
           else this.ui.toast(`pack too heavy for the ${l.item}`);
         }
+        for (const g of it.gearLoot ?? []) {
+          this.loadout.add(g);
+          this.ui.toast(`found: ${g.name} — equip it from your pack`, true);
+        }
+        this.audio.pickup();
         this.ledger.set(`looted:${it.id}`, this.gameTime);
         this.populated!.interactables = this.populated!.interactables.filter((x) => x !== it);
+        break;
+      }
+      case "recruit": {
+        this.showRecruit(it);
         break;
       }
       case "seal": {
@@ -477,9 +612,26 @@ class Game {
     });
   }
 
+  /** One meal, from whatever the pack holds. */
+  private eatOne(): boolean {
+    return this.inventory.remove("rations", 1) || this.inventory.remove("spore-bread", 1)
+      || this.inventory.remove("old rations", 1) || this.inventory.remove("blindfish", 1);
+  }
+
   private rest(surface: boolean) {
     const p = this.player;
-    const ate = this.inventory.remove("rations", 1) || this.inventory.remove("spore-bread", 1) || this.inventory.remove("old rations", 1) || this.inventory.remove("blindfish", 1);
+    const ate = this.eatOne();
+    // Everyone at the fire eats. Companions are a real expedition cost.
+    const mouths = this.companions.filter((c) => c.alive);
+    let unfed = 0;
+    for (const c of mouths) {
+      if (this.eatOne()) c.hp = Math.min(c.maxHp, c.hp + c.maxHp * 0.5);
+      else unfed++;
+    }
+    if (unfed > 0) {
+      this.ui.toast(`${unfed} of your hired hands went without food tonight. They noticed.`);
+      for (const c of mouths.slice(-unfed)) c.hp = Math.max(1, c.hp - 8);
+    }
     const drank = this.inventory.remove("waterskin", 1) || this.inventory.remove("fresh water", 1) || this.inventory.remove("cistern water", 1);
     this.gameTime += 8;
     p.hp = surface ? p.maxHp : Math.min(p.maxHp, p.hp + (ate ? 55 : 25));
@@ -498,6 +650,7 @@ class Game {
   }
 
   private onDeath(cause: string) {
+    this.audio.death();
     document.exitPointerLock?.();
     const el = document.getElementById("death-screen")!;
     el.style.display = "flex";
@@ -526,7 +679,9 @@ class Game {
       hp: p.hp, stamina: p.stamina, mana: p.mana, hunger: p.hunger, thirst: p.thirst,
       torchFuel: p.torchFuel, injury: p.injury,
       inventory: { ...this.inventory.items },
-      equipped: { weapon: p.weapon, armor: null },
+      equipped: { weapon: p.weapon, armor: this.loadout.body?.name ?? null },
+      companions: this.companions,
+      loadout: this.loadout.serialize(),
       ledgerFlags: this.ledger.flags, dynamicEvents: this.ledger.dynamicEvents,
       codex: this.codex,
     });
@@ -545,8 +700,30 @@ class Game {
       this.gameTime += dt / 40; // ~40 real seconds per game-hour
       this.player.update(dt);
       const torch = this.player.torchOn;
+      const noise = this.loadout.noise();
       for (const c of this.creatures) {
-        c.update(dt, this.player.group.position, torch, this.player.blocking);
+        c.update(dt, this.player.group.position, torch, this.player.blocking, noise);
+      }
+
+      // Companions fight what is hunting the party.
+      if (this.companionActors.length) {
+        const hostiles = this.creatures
+          .filter((c) => c.state === "stalk" || c.state === "attack")
+          .map((c) => ({
+            pos: c.mesh.position, hp: c.hp, name: c.species.name,
+            damage: (d: number) => c.takeDamage(d, false, 0),
+          }));
+        for (const a of this.companionActors) {
+          a.update(dt, this.player.group.position, hostiles);
+        }
+        // Creatures attacking the party sometimes hit the companion in the way.
+        for (const c of this.creatures) {
+          if (c.state !== "attack") continue;
+          const warden = this.companionActors.find(
+            (a) => a.comp.alive && a.comp.role === "warden" && a.mesh.position.distanceTo(c.mesh.position) < 3,
+          );
+          if (warden && Math.random() < dt * 0.5) warden.takeDamage(c.species.damage * 0.6);
+        }
       }
       // Interaction prompt.
       const it = this.nearestInteractable();
@@ -575,9 +752,10 @@ const saved = loadGame();
 if (saved) {
   const btn = document.getElementById("btn-continue")!;
   btn.style.display = "inline-block";
-  btn.onclick = () => game.continueGame(saved);
+  btn.onclick = () => { game.audio.start(); game.continueGame(saved); };
 }
 document.getElementById("btn-descend")!.onclick = () => {
+  game.audio.start(); // browsers only allow audio to begin inside a user gesture
   const input = (document.getElementById("seed-input") as HTMLInputElement).value.trim();
   const seed = input || `abyss-${Math.floor(Math.random() * 1e9).toString(36)}`;
   game.newGame(seed);

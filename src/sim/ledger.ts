@@ -89,6 +89,14 @@ export class Ledger {
         this.set(`legend-at:${depth - 2}`, now);
       }
 
+      if (key.startsWith("comp-dead:") && age > 24 * 2 && once("word-travels")) {
+        const depth = parseInt(flag.data ?? "1", 10);
+        this.addEvent(now, depth,
+          `Word has reached the settlements that a hired hand went down with a surface climber and did not come back. ` +
+          `The hiring fires are quieter now, and the price has gone up.`);
+        this.set("hiring-harder", now);
+      }
+
       if (key.startsWith("flooded:") && age > 24 && once("evac")) {
         const depth = parseInt(key.split(":")[1], 10);
         this.addEvent(now, depth,
@@ -124,6 +132,9 @@ export interface SaveData {
   injury: string | null;
   inventory: Record<string, number>;
   equipped: { weapon: string; armor: string | null };
+  /** Structural types kept loose here so sim/ doesn't depend on player/. */
+  companions?: unknown[];
+  loadout?: unknown;
   ledgerFlags: Record<string, LedgerFlag>;
   dynamicEvents: DynamicEvent[];
   codex: CodexState;
