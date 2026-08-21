@@ -7,8 +7,11 @@
 import { chromium } from "/Users/gariyuu/Projects/careeratlas/node_modules/playwright/index.mjs";
 import { readFileSync } from "node:fs";
 
-const URL = process.argv[2] || "https://abyss-black-sigma.vercel.app";
-const expectedBuild = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+const TARGET = process.argv[2] || "https://abyss-black-sigma.vercel.app";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+const here = dirname(fileURLToPath(import.meta.url));
+const expectedBuild = JSON.parse(readFileSync(join(here, "../package.json"), "utf8")).version;
 
 let failures = 0;
 const check = (name, ok, detail = "") => {
@@ -23,7 +26,7 @@ page.on("pageerror", (e) => errors.push(e.message));
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 
 const t0 = Date.now();
-const resp = await page.goto(URL, { waitUntil: "networkidle" });
+const resp = await page.goto(TARGET, { waitUntil: "networkidle" });
 check("site responds", resp?.status() === 200, `HTTP ${resp?.status()}`);
 
 // Deployment identity: the served bundle must carry this build's marker.
@@ -94,6 +97,6 @@ check("descends into a second region", descended.to === descended.from + 1,
 
 check("no runtime errors", errors.length === 0, errors.slice(0, 3).join(" | "));
 
-console.log(`\n${failures ? "LIVE VERIFY FAILED" : "LIVE VERIFY PASSED"} in ${((Date.now() - t0) / 1000).toFixed(1)}s — ${URL}`);
+console.log(`\n${failures ? "LIVE VERIFY FAILED" : "LIVE VERIFY PASSED"} in ${((Date.now() - t0) / 1000).toFixed(1)}s — ${TARGET}`);
 await browser.close();
 process.exit(failures ? 1 : 0);
