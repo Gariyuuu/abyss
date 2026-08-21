@@ -8,6 +8,9 @@
 
 import { RNG, rngFor } from "../core/rng";
 import {
+  EventContext, admissible, UNCONDITIONAL, floodSubtype,
+} from "./preconditions";
+import {
   Phonology, makePhonology, driftPhonology, word, personName, placeName,
 } from "../core/names";
 
@@ -76,6 +79,8 @@ export interface HistoricalEvent {
   id: string;
   year: number;            // years before present
   type: EventType;
+  /** Explicit variant where the type alone is ambiguous (e.g. flood: river vs groundwater). */
+  subtype: string | null;
   depth: number;           // where it happened
   civId: string | null;
   otherCivId: string | null;
@@ -426,24 +431,39 @@ export class History {
       const er = rng.fork(civ.id);
       const cityName = placeName(civ.phon, er);
       mk({
-        year: civ.foundedYear, type: "founding", depth: civ.homeDepth,
+        year: civ.foundedYear, type: "founding", subtype: null, depth: civ.homeDepth,
         civId: civ.id, otherCivId: null, person: civ.rulers[0], place: cityName,
         detail: `${civ.rulers[0]} founded ${cityName} at depth ${civ.homeDepth}, first seat of the ${civ.demonym}`,
         deaths: 0, causedById: null,
       });
 
       // Mid-history incidents; each may cascade.
+      // Mid-history occupies the older 60% of the culture's life; the terminal
+      // event is drawn from the remaining, more recent window, so a culture can
+      // never be recorded doing something after it ended.
       const incidents = er.int(2, 4);
       let lastEvent: HistoricalEvent | null = null;
+      const MID_FLOOR = 0.35;   // no mid event more recent than 35% of the lifespan
+      const midYears: number[] = [];
+      const ctx: EventContext = {
+        enemyCount: civ.relations.filter((r) => r.kind === "war").length,
+        riverCount: rivers.length,
+        rulerCount: civ.rulers.length,
+        hasParentCulture: civ.parentCivId !== null,
+        heat: stratum.heat,
+        peerCount: Math.max(0, civs.length - 1),
+      };
       for (let k = 0; k < incidents; k++) {
-        const year = Math.round(civ.foundedYear * er.range(0.25, 0.85));
+        const year = Math.round(civ.foundedYear * er.range(MID_FLOOR, 0.85));
+        midYears.push(year);
         const rulerIdx = Math.min(civ.rulers.length - 1, 1 + k);
         const ruler = civ.rulers[rulerIdx];
         const enemies = civ.relations.filter((r) => r.kind === "war");
-        const type: EventType = er.weighted([
-          ["war", enemies.length ? 3 : 0],
+        // Only event types whose preconditions actually hold may be rolled.
+        const candidates = admissible([
+          ["war", 3],
           ["plague", 1.5],
-          ["flood", rivers.length ? 2 : 0.3],
+          ["flood", rivers.length ? 2 : 0.5],
           ["regicide", 1.2],
           ["discovery", 1.5],
           ["heresy", 1],
@@ -451,7 +471,10 @@ export class History {
           ["famine", 1],
           ["burning", 0.8],
           ["sealing", 1],
-        ] as const);
+        ] as const, ctx);
+        const type: EventType = candidates.length
+          ? er.weighted(candidates)
+          : er.pick(UNCONDITIONAL);
 
         const depth = er.chance(0.6)
           ? civ.homeDepth
@@ -461,6 +484,7 @@ export class History {
 
         let otherCivId: string | null = null;
         let detail = "";
+        let subtype: string | null = null;
         switch (type) {
           case "war": {
             const enemy = enemies.length ? er.pick(enemies) : null;
@@ -474,12 +498,16 @@ export class History {
             detail = `a spore-plague rose from the lower vents in the reign of ${ruler}; ${deaths} were carried to the deep graves`;
             break;
           case "flood": {
-            // A floor with no named river can still drown: the water comes up
-            // through the rock instead, which the records find more frightening.
-            const rv = rivers.length ? er.pick(rivers) : null;
-            detail = rv
-              ? `the river ${rv.name} rose without warning and drowned the lower galleries at depth ${depth}; ${deaths} drowned; the survivors moved one floor up`
-              : `water rose from below with no river to blame it on, filling the lower galleries at depth ${depth}; ${deaths} drowned; the pumps ran for a generation afterward`;
+            // Explicit subtype rather than a rescued roll: with no named river,
+            // this is a groundwater flood, which the records find worse.
+            const sub = floodSubtype(rivers.length);
+            subtype = sub;
+            if (sub === "river") {
+              const rv = er.pick(rivers);
+              detail = `the river ${rv.name} rose without warning and drowned the lower galleries at depth ${depth}; ${deaths} drowned; the survivors moved one floor up`;
+            } else {
+              detail = `water rose from below with no river to blame it on, filling the lower galleries at depth ${depth}; ${deaths} drowned; the pumps ran for a generation afterward`;
+            }
             break;
           }
           case "regicide":
@@ -507,7 +535,7 @@ export class History {
             detail = `an unrecorded calamity struck the ${civ.demonym}`;
         }
         lastEvent = mk({
-          year, type, depth, civId: civ.id, otherCivId,
+          year, type, subtype, depth, civId: civ.id, otherCivId,
           person: ruler, place: er.chance(0.5) ? cityName : null,
           detail, deaths, causedById: lastEvent && er.chance(0.35) ? lastEvent.id : null,
         });
@@ -516,26 +544,30 @@ export class History {
       // Terminal event for non-extant civs — this is THE event ruins will reference.
       if (civ.fate !== "extant") {
         const fr = rng.fork(civ.id + ":fall");
-        const year = Math.max(15, Math.round(civ.foundedYear * fr.range(0.06, 0.3)));
+        // Strictly more recent than every mid-history event, so the culture is
+        // never recorded acting after it ended.
+        const newestMid = midYears.length ? Math.min(...midYears) : civ.foundedYear;
+        const ceiling = Math.max(2, newestMid - 1);
+        const year = Math.max(1, Math.min(ceiling, Math.round(civ.foundedYear * fr.range(0.06, 0.3))));
         const finalRuler = civ.rulers[civ.rulers.length - 1];
         const enemies = civ.relations.filter((r) => r.kind === "war");
-        const cause: EventType = fr.weighted([
-          ["war", enemies.length ? 3 : 0],
+        const fallCandidates = admissible([
+          ["war", 3],
           ["collapse", 2],
-          ["flood", rivers.length ? 1.5 : 0.2],
+          ["flood", rivers.length ? 1.5 : 0.4],
           ["plague", 1.5],
           ["migration", 1],
-        ] as const);
+        ] as const, ctx);
+        const cause: EventType = fallCandidates.length ? fr.weighted(fallCandidates) : "collapse";
         const deaths = fr.int(2000, 120000);
         let otherCivId: string | null = null;
+        let fallSubtype: string | null = null;
         let detail: string;
         switch (cause) {
           case "war": {
-            const enemy = enemies.length ? fr.pick(enemies) : null;
-            if (!enemy) {
-              detail = `${cityName} fell to raiders out of the unmapped deep in the reign of ${finalRuler}; ${deaths} died before the streets went quiet`;
-              break;
-            }
+            // Preconditions guarantee an enemy exists here; assert rather than
+            // silently inventing an anonymous foe.
+            const enemy = fr.pick(enemies);
             otherCivId = enemy.civId;
             const foe = this.findCivIn(civs, otherCivId) ?? this.civById(otherCivId);
             detail = `${cityName} was broken by the ${foe ? foe.demonym : "enemy"} in the reign of ${finalRuler}; the ${civ.demonym} ceased to be a people; ${deaths} died in the last year alone`;
@@ -544,9 +576,13 @@ export class History {
           case "collapse":
             detail = `the ceiling of the great vault failed above ${cityName}; ${deaths} were entombed in an hour, ${finalRuler} among them`;
             break;
-          case "flood":
-            detail = `the dark water claimed ${cityName} entirely; divers still find its lamps burning cold below depth ${civ.homeDepth + 2}`;
+          case "flood": {
+            fallSubtype = floodSubtype(rivers.length);
+            detail = fallSubtype === "river"
+              ? `the river ${fr.pick(rivers).name} broke its channel and claimed ${cityName} entirely; divers still find its lamps burning cold below depth ${civ.homeDepth + 2}`
+              : `the dark water rose through the floor and claimed ${cityName} entirely; divers still find its lamps burning cold below depth ${civ.homeDepth + 2}`;
             break;
+          }
           case "plague":
             detail = `the last plague left too few ${civ.demonym} to work the pumps and farms; ${finalRuler} ordered the gates opened and the people scattered`;
             break;
@@ -554,7 +590,8 @@ export class History {
             detail = `the ${civ.demonym} abandoned ${cityName} and walked down into the deep in a single generation, for reasons their own records refuse to state`;
         }
         const fall = mk({
-          year, type: cause === "migration" ? "migration" : cause, depth: civ.homeDepth,
+          year, type: cause === "migration" ? "migration" : cause, subtype: fallSubtype,
+          depth: civ.homeDepth,
           civId: civ.id, otherCivId, person: finalRuler, place: cityName,
           detail, deaths, causedById: lastEvent ? lastEvent.id : null,
         });

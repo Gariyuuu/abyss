@@ -8,7 +8,9 @@ import { Region, generateRegion } from "./gen/regions";
 import { buildTerrain, TerrainData } from "./world/terrain";
 import { populate, PopulatedRegion, Interactable } from "./world/populate";
 import { Player } from "./player/player";
-import { Inventory, startingPack, surfaceResupply, ITEMS, MAX_WEIGHT } from "./player/inventory";
+import {
+  Inventory, startingPack, surfaceResupply, ITEMS, MAX_WEIGHT, spillToCapacity,
+} from "./player/inventory";
 import { Creature } from "./ai/creature-ai";
 import { Species } from "./gen/creatures";
 import { Ledger, CodexState, saveGame, loadGame, clearSave, SaveData } from "./sim/ledger";
@@ -21,7 +23,40 @@ import {
 import { Loadout, Gear } from "./player/equipment";
 import { Audio, AmbienceKind } from "./audio/audio";
 
+declare const __ABYSS_BUILD__: string;
+// Published so the production verifier can confirm which bundle is being served.
+(window as unknown as { __ABYSS_BUILD__: string }).__ABYSS_BUILD__ = __ABYSS_BUILD__;
+
 const canvasHost = document.getElementById("app")!;
+
+/**
+ * Free GPU-side resources for a discarded region. Geometry alone is not enough:
+ * murals build a CanvasTexture each, and every mesh owns materials that hold
+ * references to them. Canonical world data (the Region record) is untouched —
+ * only the renderable subtree is released.
+ */
+function disposeSubtree(root: THREE.Object3D) {
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (mesh.geometry) geometries.add(mesh.geometry);
+    const mat = (mesh as unknown as { material?: THREE.Material | THREE.Material[] }).material;
+    if (Array.isArray(mat)) for (const m of mat) materials.add(m);
+    else if (mat) materials.add(mat);
+  });
+  for (const g of geometries) g.dispose();
+  for (const m of materials) {
+    for (const key of Object.keys(m) as (keyof THREE.Material)[]) {
+      const val = m[key] as unknown;
+      if (val && typeof val === "object" && (val as THREE.Texture).isTexture) {
+        (val as THREE.Texture).dispose();
+      }
+    }
+    m.dispose();
+  }
+  root.clear();
+}
 
 class Game {
   renderer: THREE.WebGLRenderer;
@@ -192,10 +227,8 @@ class Game {
   loadRegion(depth: number, announce = true) {
     if (this.regionGroup) {
       this.scene.remove(this.regionGroup);
-      this.regionGroup.traverse((o) => {
-        const m = o as THREE.Mesh;
-        if (m.geometry) m.geometry.dispose();
-      });
+      disposeSubtree(this.regionGroup);
+      this.regionGroup = null;
     }
     this.depth = depth;
     const region = this.visitedRegions.get(depth) ?? generateRegion(this.history, depth);
@@ -301,6 +334,7 @@ class Game {
     this.player.group.position.copy(this.populated.spawnPoint);
     this.player.velocity.set(0, 0, 0);
     this.player.yaw = Math.PI;
+    this.player.snapCamera = true;
 
     this.ui.setRegionPlate(region);
     if (announce) {
@@ -346,9 +380,17 @@ class Game {
 
   // ------------------------------------------------------------- interaction ----
 
-  /** Real carry limit: base, plus porters, minus the weight of gear you own. */
+  /** Total weight the party can carry: your back plus your porters'. */
+  private carryLimit(): number {
+    return MAX_WEIGHT + carryBonus(this.companions);
+  }
+  /** Everything on the party right now — pack contents and all owned gear. */
+  private carriedWeight(): number {
+    return this.inventory.exactWeight() + this.loadout.exactWeight();
+  }
+  /** Allowance left for pack items specifically; never negative. */
   private capacity(): number {
-    return MAX_WEIGHT + carryBonus(this.companions) - this.loadout.weight();
+    return Math.max(0, this.carryLimit() - this.loadout.exactWeight());
   }
 
   private showRecruit(it: Interactable) {
@@ -401,6 +443,14 @@ class Game {
     this.ledger.set(`comp-dead:${comp.id}`, this.gameTime, String(this.depth));
     this.ui.toast(`${comp.name} is dead at depth ${this.depth}.`, true);
     this.audio.death();
+    // Whatever they were carrying beyond what the rest of you can lift stays
+    // with them. Losing a porter is losing cargo, not just a body.
+    const spilled = spillToCapacity(this.inventory, this.loadout.exactWeight(), this.carryLimit());
+    if (spilled.length) {
+      this.ui.toast(
+        `What ${comp.name} carried stays with them: ` +
+        spilled.map((s) => `${s.qty}× ${s.item}`).join(", "));
+    }
     const civ = comp.civId ? this.history.civById(comp.civId) : null;
     this.ledger.addEvent(this.gameTime, this.depth,
       `${comp.name}${civ ? ` of ${civ.name}` : ""} died at depth ${this.depth}, hired by a climber from above. ` +
@@ -480,8 +530,12 @@ class Game {
           else this.ui.toast(`pack too heavy for the ${l.item}`);
         }
         for (const g of it.gearLoot ?? []) {
-          this.loadout.add(g);
-          this.ui.toast(`found: ${g.name} — equip it from your pack`, true);
+          const room = this.carryLimit() - this.carriedWeight();
+          if (this.loadout.tryAdd(g, room)) {
+            this.ui.toast(`found: ${g.name} — equip it from your pack`, true);
+          } else {
+            this.ui.toast(`${g.name} is here, but you cannot carry its weight`);
+          }
         }
         this.audio.pickup();
         this.ledger.set(`looted:${it.id}`, this.gameTime);

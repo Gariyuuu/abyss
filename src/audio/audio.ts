@@ -64,7 +64,11 @@ export class Audio {
   private nodes: AudioNode[] = [];
   private dripTimer: number | null = null;
   private current: AmbienceKind | null = null;
+  private currentKey: string | null = null;
   muted = false;
+
+  /** Lowest frequency the ambient bed may use, so deep floors stay audible. */
+  static readonly MIN_DRONE_HZ = 30;
 
   /** Safe to call repeatedly; only the first call after a gesture does work. */
   start() {
@@ -87,17 +91,27 @@ export class Audio {
     }
   }
 
+  /** Number of live ambient nodes — used by tests to catch runaway oscillators. */
+  get liveNodeCount(): number { return this.nodes.length; }
+  get ambienceKind(): AmbienceKind | null { return this.current; }
+  get started(): boolean { return this.ctx !== null; }
+
   /** Swap the ambient bed. Cross-fades by tearing down and rebuilding. */
   setAmbience(kind: AmbienceKind, depth: number) {
     this.start();
     if (!this.ctx || !this.ambientBus) return;
-    if (this.current === kind) return;
+    // Re-key on depth too: the same archetype sits lower further down, and
+    // skipping the rebuild would leave a shallow floor's pitch playing.
+    const key = `${kind}:${Math.floor(depth / 10)}`;
+    if (this.currentKey === key) return;
+    this.currentKey = key;
     this.current = kind;
     this.teardownAmbience();
 
     const ctx = this.ctx;
     const spec = AMBIENCE[kind] ?? AMBIENCE.cavern;
-    // Deeper floors sit lower and heavier.
+    // Deeper floors sit lower and heavier — clamped so a very deep floor never
+    // drops the bed below audibility.
     const depthShift = Math.max(0.72, 1 - depth * 0.004);
 
     const fade = ctx.createGain();
@@ -110,7 +124,7 @@ export class Audio {
     for (const detune of [0, 7]) {
       const osc = ctx.createOscillator();
       osc.type = "sine";
-      osc.frequency.value = spec.droneHz * depthShift;
+      osc.frequency.value = Math.max(Audio.MIN_DRONE_HZ, spec.droneHz * depthShift);
       osc.detune.value = detune;
       const g = ctx.createGain();
       g.gain.value = spec.droneGain;

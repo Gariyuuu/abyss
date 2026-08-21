@@ -50,7 +50,7 @@ export function generateArmor(rng: RNG, civ: Civ, depth: number, index: number):
   const quality = rng.pick(["battered", "sound", "well-kept", "master-worked"] as const);
   const qMult = { battered: 0.7, sound: 1, "well-kept": 1.15, "master-worked": 1.35 }[quality];
 
-  return {
+  return boundGear({
     id: `gear:${depth}:${index}`,
     slot: "body",
     name: `${quality} ${base.mat} (${civ.name} make)`,
@@ -61,7 +61,7 @@ export function generateArmor(rng: RNG, civ: Civ, depth: number, index: number):
     drain: base.drain,
     noise: base.noise,
     lightRadius: 1, fuelBurn: 1,
-  };
+  });
 }
 
 export function generateLight(rng: RNG, civ: Civ | null, depth: number, index: number): Gear {
@@ -73,7 +73,7 @@ export function generateLight(rng: RNG, civ: Civ | null, depth: number, index: n
     "phosphor globe": { r: 0.85, f: 0.25, w: 0.9, note: "burns dimmer than fire, but barely drinks oil at all" },
     "mirror-backed lamp": { r: 1.55, f: 1.35, w: 1.6, note: "throws light far down a gallery and eats oil doing it" },
   }[kind];
-  return {
+  return boundGear({
     id: `light:${depth}:${index}`,
     slot: "light",
     name: civ ? `${kind} (${civ.name} make)` : kind,
@@ -82,7 +82,7 @@ export function generateLight(rng: RNG, civ: Civ | null, depth: number, index: n
       : `Nobody's make; scavenged and repaired many times. It ${spec.note}.`,
     defense: 0, weight: spec.w, drain: 1, noise: 1,
     lightRadius: spec.r, fuelBurn: spec.f,
-  };
+  });
 }
 
 export function generateCharm(rng: RNG, civ: Civ, depth: number, index: number): Gear {
@@ -96,7 +96,7 @@ export function generateCharm(rng: RNG, civ: Civ, depth: number, index: number):
   else if (/dead|deeper/.test(t)) { name = `grave-token of ${civ.religion.deity}`; def = 2; noise = 0.85; }
   else { name = `sealed reliquary of ${civ.religion.deity}`; radius = 1.2; }
   void rng;
-  return {
+  return boundGear({
     id: `charm:${depth}:${index}`,
     slot: "charm",
     name,
@@ -104,6 +104,38 @@ export function generateCharm(rng: RNG, civ: Civ, depth: number, index: number):
       `Whether it does anything is a question the ${civ.demonym} would find rude.`,
     defense: def, weight: 0.3, drain: 1, noise,
     lightRadius: radius, fuelBurn: burn,
+  });
+}
+
+/** Model bounds. Generated stats are clamped into these before leaving the factory. */
+export const GEAR_BOUNDS = {
+  defense: [0, 30],
+  weight: [0, 12],
+  drain: [0.5, 2.0],
+  noise: [0.3, 2.0],
+  lightRadius: [0.4, 2.5],
+  fuelBurn: [0.1, 2.5],
+} as const;
+
+function clamp(v: number, [lo, hi]: readonly [number, number], fallback: number): number {
+  if (!Number.isFinite(v)) return fallback;
+  return Math.min(hi, Math.max(lo, v));
+}
+
+/**
+ * Enforce the model bounds and strip any non-finite value. Every generator
+ * returns through here, so no NaN, negative armor, or zero speed multiplier can
+ * reach the player no matter what a future tradition table produces.
+ */
+export function boundGear(g: Gear): Gear {
+  return {
+    ...g,
+    defense: Math.round(clamp(g.defense, GEAR_BOUNDS.defense, 0)),
+    weight: Math.round(clamp(g.weight, GEAR_BOUNDS.weight, 1) * 10) / 10,
+    drain: clamp(g.drain, GEAR_BOUNDS.drain, 1),
+    noise: clamp(g.noise, GEAR_BOUNDS.noise, 1),
+    lightRadius: clamp(g.lightRadius, GEAR_BOUNDS.lightRadius, 1),
+    fuelBurn: clamp(g.fuelBurn, GEAR_BOUNDS.fuelBurn, 1),
   };
 }
 
@@ -137,12 +169,37 @@ export class Loadout {
     else this.charm = null;
     this.stash.push(g);
   }
+  /**
+   * Unconditional add — only for save-restore, where the weight was already
+   * paid for. Gameplay pickup must go through `tryAdd`.
+   */
   add(g: Gear) { this.stash.push(g); }
 
-  defense(): number { return this.all().reduce((s, g) => s + g.defense, 0); }
-  weight(): number {
-    return Math.round(([...this.all(), ...this.stash].reduce((s, g) => s + g.weight, 0)) * 10) / 10;
+  /**
+   * Pick up gear only if it fits the remaining carry allowance. Without this,
+   * unworn gear accumulated forever and drove the player's usable capacity
+   * negative, silently making food impossible to pick up.
+   */
+  tryAdd(g: Gear, remainingAllowance: number): boolean {
+    if (g.weight > remainingAllowance) return false;
+    this.stash.push(g);
+    return true;
   }
+
+  /** Drop a stashed piece to free carry weight. */
+  drop(id: string): Gear | null {
+    const i = this.stash.findIndex((g) => g.id === id);
+    if (i < 0) return null;
+    return this.stash.splice(i, 1)[0];
+  }
+
+  defense(): number { return this.all().reduce((s, g) => s + g.defense, 0); }
+  /** Unrounded — used for capacity arithmetic. */
+  exactWeight(): number {
+    return [...this.all(), ...this.stash].reduce((s, g) => s + g.weight, 0);
+  }
+  /** Rounded for display only. */
+  weight(): number { return Math.round(this.exactWeight() * 10) / 10; }
   drain(): number { return this.all().reduce((m, g) => m * g.drain, 1); }
   noise(): number { return this.all().reduce((m, g) => m * g.noise, 1); }
   lightRadius(): number { return this.all().reduce((m, g) => m * g.lightRadius, 1); }

@@ -15,6 +15,7 @@ import { RNG } from "../core/rng";
 import { personName } from "../core/names";
 import { Civ, History } from "../gen/history";
 import { DocSpec } from "../gen/lore";
+import { Interpretation, interpret, renderInterpretation } from "../gen/interpretation";
 import { Species } from "../gen/creatures";
 
 export type CompanionRole = "porter" | "warden" | "scholar" | "hunter";
@@ -110,74 +111,20 @@ export function hireCost(role: CompanionRole): { item: string; qty: number }[] {
 // ---------------------------------------------------------------- reading ----
 
 /**
- * A scholar's annotation on a document, derived from the relationship between
- * the scholar's culture and the document's culture as recorded in history.
- * This is a real second perspective, not flavor text.
+ * A scholar's annotation on a document. The judgment itself is computed by the
+ * canonical interpretation layer (gen/interpretation.ts) from the recorded
+ * relationship between the two cultures; this only decides whether the scholar
+ * is in a position to speak at all, and returns the structure alongside the
+ * prose so callers (and the expedition journal) can record provenance.
  */
 export function scholarReading(
   comp: Companion, doc: DocSpec, history: History,
-): { speaker: string; text: string } | null {
-  if (comp.role !== "scholar" || !comp.alive) return null;
-  const mine = comp.civId ? history.civById(comp.civId) : null;
-  if (!mine) return null;
-  const theirs = doc.civId ? history.civById(doc.civId) : null;
-  const speaker = `${comp.name} of ${mine.name}`;
-
-  if (!theirs) {
-    return {
-      speaker,
-      text: `"I cannot place the hand. The letter-forms are older than anything we teach. ` +
-        `Whoever cut this was not writing for us, and not, I think, for anyone who came after them either."`,
-    };
-  }
-
-  if (theirs.id === mine.id) {
-    return {
-      speaker,
-      text: `"These are my own people's records. I was raised on this account." ` +
-        (doc.kind === "chronicle"
-          ? `"Which is exactly why I will tell you the court wrote it, and the court had reasons. Halve the glory. Keep the dates."`
-          : `"It reads true to me — and you should weigh that, because I am the last person able to read it coldly."`),
-    };
-  }
-
-  const rel = mine.relations.find((r) => r.civId === theirs.id);
-  if (rel?.kind === "war") {
-    return {
-      speaker,
-      text: `"The ${theirs.demonym}." *They do not touch it.* "We have their version of this in our own archives, ` +
-        `and it does not say what this says. Somebody is lying about who struck first. I know which way I lean, ` +
-        `and I am telling you so you can discount me."`,
-    };
-  }
-  if (rel?.kind === "trade" || rel?.kind === "vassal") {
-    return {
-      speaker,
-      text: `"We knew these people — we traded ${mine.economy[0]} to them for a century." ` +
-        `"Their record-keeping was honest by the standards of the deep. Where they and we disagree, ` +
-        `I would check ours first."`,
-    };
-  }
-  if (mine.parentCivId === theirs.id) {
-    return {
-      speaker,
-      text: `"...This is our own alphabet, older." *A long pause.* "We are taught we have always been here. ` +
-        `This says we came down from them. I would like to sit with that before I say anything else."`,
-    };
-  }
-  if (theirs.parentCivId === mine.id) {
-    return {
-      speaker,
-      text: `"These are the ones who left us." "The children of the schism. They kept the letters and changed the vowels, ` +
-        `so it reads like listening to your own family through a wall."`,
-    };
-  }
-  return {
-    speaker,
-    text: `"Unknown to us — and we thought we had a list of everyone." ` +
-      `"Note the ${theirs.arch.motif} motif in the border. That is not a decoration; that is a signature. ` +
-      `If we see it again lower down, it is the same people."`,
-  };
+): { speaker: string; text: string; provenance: Interpretation } | null {
+  if (comp.role !== "scholar" || !comp.alive || !comp.civId) return null;
+  const provenance = interpret(comp.civId, doc, history);
+  if (!provenance) return null;
+  const { speaker, text } = renderInterpretation(provenance, comp.name, history);
+  return { speaker, text, provenance };
 }
 
 /** A hunter's read on a creature the player has barely observed. */

@@ -6,6 +6,7 @@
 
 import { RNG } from "../core/rng";
 import { History, HistoricalEvent, Civ } from "./history";
+import { wasAliveAt } from "./preconditions";
 import { personName } from "../core/names";
 
 export type DocKind = "journal" | "chronicle" | "enemy-account" | "gravestone" | "mural" | "inscription" | "warning";
@@ -46,10 +47,18 @@ export function documentsForEvent(
   const docs: DocSpec[] = [];
   const kinds: DocKind[] = [];
 
+  // A source can only be authored by a culture that existed when it was written.
+  // Contemporary accounts require the author to be alive at the event's date;
+  // a chronicle or monument may be written later, but never after that culture
+  // itself ended.
+  const aliveAtEvent = (c: Civ | null) =>
+    c !== null && wasAliveAt(c.foundedYear, c.fellYear, ev.year);
+
   // Which sources survived? 1–3 per event, chosen deterministically.
   kinds.push(rng.weighted([["chronicle", 3], ["journal", 3], ["inscription", 2], ["mural", 1.5]] as const));
   if (rng.chance(0.55)) kinds.push(rng.pick(["journal", "gravestone", "warning"] as const));
-  if (foe && rng.chance(0.6)) kinds.push("enemy-account");
+  // The enemy can only have left an account if they were still a people then.
+  if (aliveAtEvent(foe) && rng.chance(0.6)) kinds.push("enemy-account");
 
   let di = 0;
   for (const kind of kinds) {

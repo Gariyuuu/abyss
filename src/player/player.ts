@@ -45,6 +45,8 @@ export class Player {
   /** Worn gear; its stats feed movement, light, defense and how loud you are. */
   loadout = new Loadout();
   audio: Audio | null = null;
+  /** Set on region entry so the camera arrives instead of flying there. */
+  snapCamera = true;
 
   private grounded = false;
   private climbing = false;
@@ -339,7 +341,14 @@ export class Player {
     const camPos = look.clone().add(off);
     const camGround = this.world.heightAt(camPos.x, camPos.z) + 0.4;
     if (camPos.y < camGround) camPos.y = camGround;
-    this.camera.position.lerp(camPos, Math.min(1, dt * 10));
+    // Snap on arrival; smooth thereafter. Without the snap the camera flies
+    // across the whole map on every floor change before catching up.
+    if (this.snapCamera) {
+      this.camera.position.copy(camPos);
+      this.snapCamera = false;
+    } else {
+      this.camera.position.lerp(camPos, Math.min(1, dt * 10));
+    }
     this.camera.lookAt(look);
 
     if (inWater !== this.swimHint) {

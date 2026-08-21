@@ -17,6 +17,8 @@ import { History } from "../gen/history";
 const $ = (id: string) => document.getElementById(id)!;
 
 export class UI {
+  /** Cap on sources rendered at once, so hundreds of finds stay navigable. */
+  static readonly MAX_RENDERED_DOCS = 40;
   activePanel: string | null = null;
   private codexTab = "regions";
   private invTab = "carry";
@@ -274,6 +276,15 @@ export class UI {
         btn.textContent = "wear";
         btn.onclick = () => { load.equip(g); this.renderInventory(); };
         row.appendChild(btn);
+        // Carried gear costs weight, so there must always be a way to shed it.
+        const drop = document.createElement("button");
+        drop.textContent = "drop";
+        drop.onclick = () => {
+          load.drop(g.id);
+          this.toast(`left the ${g.name} where it lay`);
+          this.renderInventory();
+        };
+        row.appendChild(drop);
         list.appendChild(row);
       }
     }
@@ -394,8 +405,18 @@ export class UI {
         body.appendChild(div);
       }
     } else if (this.codexTab === "events") {
-      const docs = codex.docsMeta;
-      if (!docs.length) body.innerHTML = `<p class="sub">Read journals, murals, graves. Then compare them here — the sources will not agree.</p>`;
+      const all = codex.docsMeta;
+      if (!all.length) body.innerHTML = `<p class="sub">Read journals, murals, graves. Then compare them here — the sources will not agree.</p>`;
+      // A long expedition can accumulate hundreds of sources; render only the
+      // most recent window so the panel stays usable and the DOM stays bounded.
+      const docs = all.slice(-UI.MAX_RENDERED_DOCS);
+      if (all.length > docs.length) {
+        const note = document.createElement("p");
+        note.className = "sub";
+        note.textContent =
+          `Showing the ${docs.length} most recent of ${all.length} sources recovered.`;
+        body.appendChild(note);
+      }
       // Group read documents by the event they describe.
       const byEvent = new Map<string, typeof docs>();
       const loose: typeof docs = [];

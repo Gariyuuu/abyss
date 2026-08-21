@@ -7,9 +7,38 @@ saves in localStorage.
 ```bash
 npm install
 npm run dev      # play at the printed localhost URL
-npm test         # headless smoke test of the generative core
 npm run build    # typecheck + production build
 ```
+
+## Testing: fast gate vs deep gate
+
+**Fast — every push (CI, ~10s).** `npm test` runs 85 tests: generation
+preconditions and chronology, scholar-provenance structure, mechanics
+(equipment bounds, armor math, noise/sensing, companion lifecycle, carry
+weight, food), the six complete-expedition integration runs, and journal
+integrity. `npm run smoke` adds the region fuzz gate. `npm run typecheck` and
+`npm run build` complete the gate.
+
+**Deep — before a release (~55s).** `npm run validate:deep` runs 100 full
+expeditions (20 of them to depth 60, 3,200 floors total), then mass-fuzzes
+~1,300 cultures, ~6,100 historical events, ~6,000 documents, ~1,600 scholar
+interpretations and ~1,200 companions, asserting that every canonical reference
+resolves and every event satisfies its declared preconditions.
+
+**Live — after deploy.** `npm run verify:live` boots the deployed bundle in a
+real browser, checks it serves *this* build (not just HTTP 200), generates a
+world, reads a document into the codex, and descends a floor.
+
+## Why generation cannot crash
+
+Four bugs in this codebase came from the same mistake — rolling an event and
+then assuming an entity that need not exist (an enemy for a war, a river for a
+flood, a living author for an account). Requirements are therefore declared as
+data in [`src/gen/preconditions.ts`](src/gen/preconditions.ts), and the selector
+can only choose event types whose requirements the current context satisfies.
+Where the absence is interesting it is modelled rather than avoided: a floor
+with no river still floods, as an explicit `groundwater` subtype. Nothing is
+ever invented to rescue a roll.
 
 ## The order of truth
 
@@ -59,6 +88,18 @@ our own archives, and it does not say what this says"*; one reading their **own*
 people's account says *"it reads true to me — and you should weigh that, because I am
 the last person able to read it coldly."* You get a second source for free, and you
 have to weigh its bias too.
+
+That judgment is **computed, not written**.
+[`src/gen/interpretation.ts`](src/gen/interpretation.ts) derives a structured
+`Interpretation` — relationship, contact period, the specific canonical event ids
+the two cultures share, stance, legibility, confidence — purely from history, and
+the prose layer may only express what that structure carries. Tests assert the
+structure and never snapshot the wording. A scholar is also **not omniscient**: they
+read their own and related scripts fluently, an enemy's only partially, and a
+stranger's not at all — in which case they say so rather than inventing familiarity.
+Two scholars from different cultures reach genuinely different conclusions about the
+same document, and nothing reconciles them; the canonical event underneath is
+untouched by anyone's reading of it.
 
 Companions eat your food when you rest, and they die permanently. When one does, the
 world records it and word travels: the hiring fires get quieter and the price goes up.

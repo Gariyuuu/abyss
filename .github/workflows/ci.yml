@@ -1,0 +1,28 @@
+# FAST CI — runs on every push. The heavy suites (100 expeditions, thousands of
+# generated cultures, memory benchmarks) live in `npm run validate:deep`, which
+# is run locally before a release; see README.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit, property and expedition tests
+        run: npm test
+      - name: Generation smoke gate
+        run: npm run smoke
+      - name: Production build
+        run: npm run build

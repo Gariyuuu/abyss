@@ -124,6 +124,17 @@ export function graveMarker(style: ArchStyle | null, rng: RNG): THREE.Group {
 export function muralWall(style: ArchStyle, seedText: string, eventType: string | null): Built {
   const g = new THREE.Group();
   const w = 7, h = 4;
+  // Headless (test harness) has no DOM to paint a fresco onto; the mural still
+  // exists as a placed, collidable object so world structure stays identical.
+  if (typeof document === "undefined") {
+    const plain = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.5), mat(style.palette));
+    plain.position.y = h / 2;
+    g.add(plain);
+    return {
+      group: g,
+      colliders: [{ min: new THREE.Vector3(-w / 2, 0, -0.25), max: new THREE.Vector3(w / 2, h, 0.25) }],
+    };
+  }
   const canvas = document.createElement("canvas");
   canvas.width = 512; canvas.height = 296;
   const ctx = canvas.getContext("2d")!;

@@ -22,6 +22,11 @@ export interface LedgerFlag {
 }
 
 export class Ledger {
+  /** Namespace for internal "this consequence already fired" markers. */
+  static readonly MARKER_PREFIX = "@";
+  /** Long expeditions must not grow the news log without bound. */
+  static readonly MAX_EVENTS = 200;
+
   flags: Record<string, LedgerFlag> = {};
   dynamicEvents: DynamicEvent[] = [];
   private nextId = 0;
@@ -34,14 +39,27 @@ export class Ledger {
 
   addEvent(t: number, depth: number, text: string) {
     this.dynamicEvents.push({ id: "dyn:" + this.nextId++, atTime: t, depth, text, seen: false });
+    // Keep the most recent window; the oldest news stops being news.
+    if (this.dynamicEvents.length > Ledger.MAX_EVENTS) {
+      this.dynamicEvents.splice(0, this.dynamicEvents.length - Ledger.MAX_EVENTS);
+    }
   }
 
-  /** Advance consequences. Called on rest and on floor transitions. */
+  /**
+   * Advance consequences. Called on rest and on floor transitions.
+   *
+   * Bookkeeping markers are namespaced under MARKER_PREFIX and skipped by the
+   * scan. Without that, a marker like `comp-dead:x#word-travels` still starts
+   * with `comp-dead:`, so it would match its own rule on the next pass and
+   * re-announce the same consequence forever — spamming the player and growing
+   * the event log without bound.
+   */
   propagate(now: number, history: History) {
     for (const [key, flag] of Object.entries(this.flags)) {
+      if (key.startsWith(Ledger.MARKER_PREFIX)) continue;
       const age = now - flag.t;
       const once = (suffix: string) => {
-        const k = key + "#" + suffix;
+        const k = `${Ledger.MARKER_PREFIX}${key}#${suffix}`;
         if (this.flags[k]) return false;
         this.flags[k] = { t: now };
         return true;

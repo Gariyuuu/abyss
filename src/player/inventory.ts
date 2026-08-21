@@ -80,22 +80,48 @@ export class Inventory {
 
   /** `capacity` lets porters and worn-gear weight adjust the real limit. */
   add(name: string, qty = 1, capacity = MAX_WEIGHT): boolean {
+    if (!Number.isFinite(qty) || qty <= 0) return false;
     const def = ITEMS[name] ?? { weight: 0.4 };
-    if (this.weight() + def.weight * qty > capacity) return false;
-    this.items[name] = (this.items[name] ?? 0) + qty;
+    // Compare exact weights, never the rounded display value: rounding up at
+    // each step let the pack creep past its limit a tenth at a time.
+    if (this.exactWeight() + def.weight * qty > capacity + 1e-9) return false;
+    this.items[name] = this.count(name) + qty;
     return true;
   }
+
+  /**
+   * Remove `qty` of an item, or fail without touching anything.
+   *
+   * The guards matter more than they look: a non-positive or non-finite qty
+   * used to slip past the stock check and write NaN into the stack. Every later
+   * comparison against NaN is false, so the item both weighed nothing and could
+   * be "removed" an unlimited number of times — an infinite-food bug that a
+   * starving expedition quietly lived on.
+   */
   remove(name: string, qty = 1): boolean {
-    if ((this.items[name] ?? 0) < qty) return false;
-    this.items[name] -= qty;
-    if (this.items[name] <= 0) delete this.items[name];
+    if (!Number.isFinite(qty) || qty <= 0) return false;
+    const held = this.count(name);
+    if (held < qty) return false;
+    const left = held - qty;
+    if (left <= 0) delete this.items[name];
+    else this.items[name] = left;
     return true;
   }
-  count(name: string): number { return this.items[name] ?? 0; }
-  weight(): number {
+
+  /** Always a finite, non-negative number, even if a stack was corrupted. */
+  count(name: string): number {
+    const v = this.items[name];
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  }
+  /** Unrounded — the value all capacity arithmetic must use. */
+  exactWeight(): number {
     let w = 0;
-    for (const [n, q] of Object.entries(this.items)) w += (ITEMS[n]?.weight ?? 0.4) * q;
-    return Math.round(w * 10) / 10;
+    for (const n of Object.keys(this.items)) w += (ITEMS[n]?.weight ?? 0.4) * this.count(n);
+    return w;
+  }
+  /** Rounded for display only. */
+  weight(): number {
+    return Math.round(this.exactWeight() * 10) / 10;
   }
   canCraft(r: Recipe): boolean {
     return r.needs.every(([n, q]) => this.count(n) >= q);
@@ -106,6 +132,42 @@ export class Inventory {
     this.items[r.out] = (this.items[r.out] ?? 0) + r.qty; // crafting output ignores weight cap by a hair
     return true;
   }
+}
+
+/**
+ * Shed load until the party is inside its carry limit, and report what was lost.
+ *
+ * This exists because losing a porter drops the limit by 12 while the goods are
+ * still on the party — an impossible state that no pickup check can prevent.
+ * The honest resolution is that the dead porter's share stays where they fell.
+ * Survival stock (food, water, light, medicine) is shed last.
+ */
+export function spillToCapacity(
+  inv: Inventory, gearWeight: number, limit: number,
+): { item: string; qty: number }[] {
+  const dropped: { item: string; qty: number }[] = [];
+  const priority = (name: string): number => {
+    const t = ITEMS[name]?.type;
+    if (t === "material" || t === "artifact") return 0;   // shed first
+    if (t === "ammo" || t === "tool") return 1;
+    return 2;                                             // food/water/light/medicine last
+  };
+  let guard = 0;
+  while (inv.exactWeight() + gearWeight > limit + 1e-9 && guard++ < 500) {
+    const candidates = Object.keys(inv.items).filter((n) => inv.count(n) > 0);
+    if (!candidates.length) break;
+    candidates.sort((a, b) => {
+      const p = priority(a) - priority(b);
+      if (p !== 0) return p;
+      return (ITEMS[b]?.weight ?? 0.4) - (ITEMS[a]?.weight ?? 0.4);  // heaviest first
+    });
+    const victim = candidates[0];
+    inv.remove(victim, 1);
+    const existing = dropped.find((d) => d.item === victim);
+    if (existing) existing.qty++;
+    else dropped.push({ item: victim, qty: 1 });
+  }
+  return dropped;
 }
 
 export function startingPack(): Inventory {
