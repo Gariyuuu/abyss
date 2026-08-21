@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ABYSS: The Infinite Below</title>
+  <meta name="description" content="A generative RPG. Every floor has a reason to exist." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🕳️</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    /* Hallmark · component: game HUD overlay · genre: atmospheric · theme: custom
+     * (vibe: "buried empire, lamplight, field notes" · paper oklch(10% 0.01 60) ·
+     *  accent oklch(75% 0.12 75) amber · Cormorant Garamond + Palatino + system mono)
+     * states: default · hover · focus · active · disabled covered on all buttons
+     * Hallmark · pre-emit critique: P4 H5 E4 S4 R5 V4
+     */
+    :root {
+      --color-void: oklch(8% 0.008 60);
+      --color-paper: oklch(13% 0.012 60);
+      --color-paper-2: oklch(17% 0.014 65);
+      --color-ink: oklch(88% 0.02 80);
+      --color-ink-dim: oklch(66% 0.02 80);
+      --color-ink-faint: oklch(46% 0.015 80);
+      --color-accent: oklch(75% 0.12 75);
+      --color-accent-dim: oklch(58% 0.09 70);
+      --color-blood: oklch(55% 0.19 25);
+      --color-life: oklch(62% 0.11 140);
+      --color-aether: oklch(65% 0.10 260);
+      --color-focus: oklch(80% 0.13 75);
+      --hairline: oklch(35% 0.02 75 / 0.55);
+      --hairline-faint: oklch(35% 0.02 75 / 0.28);
+      --font-display: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
+      --font-body: "Iowan Old Style", "Palatino", Georgia, serif;
+      --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+      --space-5: 24px; --space-6: 32px; --space-7: 48px;
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+      --dur-fast: 140ms; --dur-med: 260ms; --dur-slow: 600ms;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: clip; background: var(--color-void); }
+    body { font-family: var(--font-body); color: var(--color-ink); }
+    #app { width: 100%; height: 100%; position: relative; }
+    canvas { display: block; }
+    button { font-family: var(--font-body); cursor: pointer; }
+    button:focus-visible, input:focus-visible {
+      outline: 2px solid var(--color-focus); outline-offset: 2px;
+    }
+    ::selection { background: oklch(75% 0.12 75 / 0.3); }
+    ::-webkit-scrollbar { width: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 5px; border: 2px solid var(--color-paper); }
+
+    .kbd {
+      font-family: var(--font-mono); font-size: 0.72em; letter-spacing: 0.5px;
+      color: var(--color-accent); border: 1px solid var(--hairline);
+      border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px 2px;
+      background: oklch(20% 0.015 70 / 0.6); white-space: nowrap;
+    }
+
+    /* ---------- Atmosphere layers ---------- */
+    .vignette { position: absolute; inset: 0; pointer-events: none; z-index: 5;
+      box-shadow: inset 0 0 22vmax 8vmax oklch(0% 0 0 / 0.82); }
+    #damage-flash { position: absolute; inset: 0; pointer-events: none; z-index: 6;
+      background: radial-gradient(ellipse at center, transparent 40%, oklch(45% 0.18 25 / 0.55) 100%);
+      opacity: 0; transition: opacity var(--dur-slow) var(--ease-out); }
+    #damage-flash.hit { opacity: 1; transition: none; }
+
+    /* ---------- Region transition card ---------- */
+    #transition { position: absolute; inset: 0; z-index: 30; pointer-events: none;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: oklch(5% 0.008 60 / 0.94); opacity: 0;
+      transition: opacity 900ms var(--ease-in-out); text-align: center; padding: 0 8vw; }
+    #transition.show { opacity: 1; }
+    #transition .t-depth { font-family: var(--font-mono); font-size: 12px; letter-spacing: 6px;
+      color: var(--color-accent-dim); text-transform: uppercase; }
+    #transition .t-name { font-family: var(--font-display); font-weight: 500; font-size: clamp(34px, 6vw, 64px);
+      letter-spacing: 2px; color: var(--color-ink); margin-top: var(--space-3); line-height: 1.1;
+      overflow-wrap: anywhere; min-width: 0; }
+    #transition .t-epithet { font-family: var(--font-display); font-size: clamp(16px, 2.2vw, 22px);
+      color: var(--color-accent); margin-top: var(--space-2); letter-spacing: 1px; }
+    #transition .t-rule { width: 72px; height: 1px; background: var(--color-accent-dim);
+      margin: var(--space-5) 0; opacity: 0.7; }
+    #transition .t-purpose { font-size: 15px; line-height: 1.7; color: var(--color-ink-dim);
+      max-width: 560px; }
+    #transition .t-inner { transform: translateY(10px); transition: transform 900ms var(--ease-out);
+      display: flex; flex-direction: column; align-items: center; }
+    #transition.show .t-inner { transform: none; }
+
+    /* ---------- HUD ---------- */
+    #hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+
+    #depth-plate { position: absolute; top: clamp(12px, 2.5vh, 24px); left: 50%; transform: translateX(-50%);
+      text-align: center; transition: opacity var(--dur-med) var(--ease-out); }
+    #depth-plate .depth { font-family: var(--font-mono); font-size: 11px; letter-spacing: 5px;
+      color: var(--color-ink-faint); text-transform: uppercase; }
+    #depth-plate .region { font-family: var(--font-display); font-weight: 500; font-size: 24px;
+      letter-spacing: 1.5px; color: var(--color-ink); text-shadow: 0 2px 12px oklch(0% 0 0 / 0.9);
+      margin-top: 2px; }
+    #depth-plate .epithet { font-size: 12px; color: var(--color-ink-faint); margin-top: 2px; letter-spacing: 0.5px; }
+
+    #vitals { position: absolute; left: clamp(14px, 2vw, 26px); bottom: clamp(14px, 2.5vh, 26px);
+      width: min(250px, 42vw); background: oklch(10% 0.01 60 / 0.72);
+      border: 1px solid var(--hairline-faint); border-radius: 6px;
+      padding: var(--space-3) var(--space-3) var(--space-2); backdrop-filter: blur(6px); }
+    .bar-row { display: grid; grid-template-columns: 16px 1fr; gap: var(--space-2);
+      align-items: center; margin-bottom: 6px; }
+    .bar-row .glyph { font-size: 11px; text-align: center; color: var(--color-ink-faint); line-height: 1; }
+    .bar { height: 7px; background: oklch(6% 0.008 60 / 0.9); border-radius: 3px;
+      overflow: clip; position: relative; }
+    .bar > div { height: 100%; border-radius: 3px; transition: width var(--dur-med) var(--ease-out); }
+    #bar-hp > div { background: linear-gradient(90deg, oklch(48% 0.17 25), oklch(60% 0.18 30)); }
+    #bar-st > div { background: linear-gradient(90deg, oklch(52% 0.09 140), oklch(65% 0.11 145)); }
+    #bar-mn > div { background: linear-gradient(90deg, oklch(55% 0.09 260), oklch(68% 0.10 265)); }
+    #bar-lt > div { background: linear-gradient(90deg, oklch(60% 0.11 65), oklch(76% 0.13 80)); }
+    .bar-row.low .bar > div { animation: pulse-low 1.1s var(--ease-in-out) infinite alternate; }
+    @keyframes pulse-low { from { opacity: 1; } to { opacity: 0.35; } }
+    #needs { display: flex; gap: var(--space-4); white-space: nowrap; margin-top: var(--space-2);
+      padding-top: var(--space-2); border-top: 1px solid var(--hairline-faint);
+      font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.5px;
+      color: var(--color-ink-dim); }
+    #needs .warn { color: var(--color-accent); }
+    #needs .crit { color: oklch(68% 0.17 30); animation: pulse-low 0.9s infinite alternate; }
+    #injury-tag { display: none; margin-top: var(--space-2); font-size: 11.5px;
+      color: oklch(68% 0.15 30); letter-spacing: 0.5px; }
+
+    #weapon-plate { position: absolute; right: clamp(14px, 2vw, 26px); bottom: clamp(14px, 2.5vh, 26px);
+      display: flex; gap: var(--space-2); }
+    .wslot { width: 40px; height: 40px; border: 1px solid var(--hairline-faint); border-radius: 6px;
+      background: oklch(10% 0.01 60 / 0.72); backdrop-filter: blur(6px);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: var(--color-ink-faint); transition: border-color var(--dur-fast) var(--ease-out),
+        color var(--dur-fast) var(--ease-out); }
+    .wslot .ico { font-size: 15px; line-height: 1; }
+    .wslot .num { font-family: var(--font-mono); font-size: 8.5px; margin-top: 2px; opacity: 0.7; }
+    .wslot.active { border-color: var(--color-accent-dim); color: var(--color-accent); }
+
+    #crosshair { position: absolute; top: 50%; left: 50%; width: 3px; height: 3px; margin: -1.5px;
+      border-radius: 50%; background: oklch(90% 0.02 80 / 0.55);
+      box-shadow: 0 0 6px oklch(0% 0 0 / 0.8); }
+
+    #prompt { position: absolute; bottom: 26%; left: 50%; transform: translate(-50%, 4px);
+      font-size: 14.5px; letter-spacing: 0.5px; color: var(--color-ink);
+      background: oklch(10% 0.01 60 / 0.82); backdrop-filter: blur(6px);
+      padding: 8px 18px; border: 1px solid var(--hairline); border-radius: 6px;
+      display: none; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out),
+        transform var(--dur-fast) var(--ease-out); max-width: min(560px, 84vw); text-align: center; }
+    #prompt.on { display: block; opacity: 1; transform: translate(-50%, 0); }
+
+    #lock-hint { position: absolute; bottom: 17%; left: 50%; transform: translateX(-50%);
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+      color: var(--color-ink-faint); display: none; }
+    #lock-hint.on { display: block; animation: pulse-low 1.6s infinite alternate; }
+
+    #toast-stack { position: absolute; top: 15%; left: 50%; transform: translateX(-50%);
+      display: flex; flex-direction: column; align-items: center; gap: var(--space-2);
+      width: min(620px, 90vw); }
+    .toast { font-size: 13.5px; letter-spacing: 0.3px; color: var(--color-ink);
+      background: oklch(10% 0.01 60 / 0.85); backdrop-filter: blur(6px);
+      border: 1px solid var(--hairline-faint); border-left: 2px solid var(--color-ink-faint);
+      border-radius: 4px; padding: 7px 16px; max-width: 100%;
+      animation: toast-in 5.6s var(--ease-out) forwards; text-align: center; }
+    .toast.discovery { color: var(--color-accent); border-left-color: var(--color-accent);
+      font-family: var(--font-display); font-size: 16px; letter-spacing: 0.8px; padding: 9px 22px; }
+    @keyframes toast-in {
+      0% { opacity: 0; transform: translateY(-8px); }
+      6% { opacity: 1; transform: none; }
+      82% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    #controls-hint { position: absolute; right: clamp(14px, 2vw, 26px); top: clamp(12px, 2.5vh, 24px);
+      font-size: 11px; color: var(--color-ink-faint); text-align: right; line-height: 2.1;
+      opacity: 0.85; transition: opacity var(--dur-med) var(--ease-out); }
+    #controls-hint:hover { opacity: 1; }
+    #controls-hint .kbd { margin-left: 3px; }
+
+    /* ---------- Panels ---------- */
+    .panel { position: absolute; inset: 0; z-index: 20; display: none; pointer-events: auto;
+      background: oklch(4% 0.006 60 / 0.78); overflow-y: auto; backdrop-filter: blur(4px); }
+    .panel.open { display: block; }
+    .panel-inner { max-width: 880px; margin: 5vh auto 8vh; padding: var(--space-7) clamp(20px, 5vw, 56px);
+      background: oklch(11% 0.012 60 / 0.97); border: 1px solid var(--hairline);
+      border-radius: 8px; min-height: 60vh;
+      animation: panel-in var(--dur-med) var(--ease-out); }
+    @keyframes panel-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    .panel h1 { font-family: var(--font-display); font-weight: 500; font-size: 30px;
+      letter-spacing: 3px; color: var(--color-accent); text-transform: uppercase; }
+    .panel h2 { font-family: var(--font-display); font-weight: 600; font-size: 19px; letter-spacing: 0.5px;
+      color: var(--color-ink); margin: var(--space-6) 0 var(--space-3);
+      border-bottom: 1px solid var(--hairline-faint); padding-bottom: var(--space-2); }
+    .panel .sub { font-size: 13px; color: var(--color-ink-faint); font-style: italic;
+      margin-top: var(--space-2); margin-bottom: var(--space-4); }
+    .panel p, .panel li { font-size: 14.5px; line-height: 1.7; color: var(--color-ink-dim); }
+    .panel p { margin-bottom: var(--space-2); }
+    .panel ul { padding-left: 1.2em; }
+    .panel b { color: var(--color-ink); font-weight: 600; }
+    .close-hint { float: right; font-size: 11px; color: var(--color-ink-faint); margin-top: 6px; }
+    .doc-body { white-space: pre-wrap; font-size: 16px; line-height: 1.85; color: var(--color-ink);
+      margin-top: var(--space-4); }
+    .doc-source { margin-top: var(--space-5); padding-top: var(--space-3);
+      border-top: 1px solid var(--hairline-faint);
+      font-size: 12.5px; color: var(--color-accent-dim); font-style: italic; }
+
+    .tabs { display: flex; gap: var(--space-2); margin: var(--space-4) 0 var(--space-5); flex-wrap: wrap; }
+    .tabs button { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+      background: none; color: var(--color-ink-faint); border: 1px solid var(--hairline-faint);
+      border-radius: 4px; padding: 7px 14px;
+      transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
+    .tabs button:hover { color: var(--color-ink-dim); border-color: var(--hairline); }
+    .tabs button:active { transform: translateY(1px); }
+    .tabs button.active { color: var(--color-accent); border-color: var(--color-accent-dim);
+      background: oklch(75% 0.12 75 / 0.06); }
+
+    .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-5); }
+    @media (max-width: 640px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+    .kv { font-size: 13.5px; color: var(--color-ink-dim); padding: 5px 0; line-height: 1.55;
+      border-bottom: 1px dotted var(--hairline-faint); }
+    .kv b { color: var(--color-ink); font-weight: 600; }
+    .kv .unknown, .qty { color: var(--color-ink-faint); font-style: normal; }
+    .kv .unknown { font-style: italic; }
+    .qty { font-size: 0.86em; }
+
+    .inv-row { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3);
+      padding: var(--space-2) var(--space-2); border-bottom: 1px solid var(--hairline-faint);
+      font-size: 14.5px; border-radius: 4px;
+      transition: background var(--dur-fast) var(--ease-out); }
+    .inv-row:hover { background: oklch(75% 0.12 75 / 0.05); }
+    .inv-row button { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 1.5px;
+      text-transform: uppercase; background: none; color: var(--color-accent);
+      border: 1px solid var(--color-accent-dim); border-radius: 4px; padding: 5px 14px;
+      flex-shrink: 0; transition: background var(--dur-fast) var(--ease-out); }
+    .inv-row button:hover { background: oklch(75% 0.12 75 / 0.1); }
+    .inv-row button:active { transform: translateY(1px); }
+    .inv-row button:disabled { color: var(--color-ink-faint); border-color: var(--hairline-faint);
+      cursor: default; background: none; transform: none; }
+
+    /* ---------- Title / Death ---------- */
+    #title-screen { position: absolute; inset: 0; z-index: 40; pointer-events: auto;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background:
+        radial-gradient(ellipse 90% 55% at 50% 118%, oklch(28% 0.06 60 / 0.55) 0%, transparent 65%),
+        radial-gradient(ellipse 60% 40% at 50% 112%, oklch(45% 0.1 70 / 0.3) 0%, transparent 60%),
+        var(--color-void);
+      text-align: center; padding: 0 6vw; }
+    #title-screen::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 45% 90% at 50% 130%, transparent 30%, oklch(0% 0 0 / 0.55) 100%); }
+    #title-screen > * { position: relative; z-index: 1; }
+    #title-screen h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(56px, 11vw, 108px);
+      letter-spacing: clamp(10px, 2.4vw, 26px); color: var(--color-ink); text-indent: clamp(10px, 2.4vw, 26px);
+      text-shadow: 0 0 60px oklch(75% 0.12 75 / 0.25); line-height: 1; }
+    #title-screen h2 { font-family: var(--font-mono); font-size: 12px; letter-spacing: 7px;
+      color: var(--color-accent); text-transform: uppercase; font-weight: 400;
+      margin-top: var(--space-4); text-indent: 7px; }
+    .seed-row { margin-top: var(--space-7); display: flex; gap: var(--space-3); align-items: stretch;
+      flex-wrap: wrap; justify-content: center; }
+    #seed-input { font-family: var(--font-body); background: oklch(0% 0 0 / 0.45);
+      border: 1px solid var(--hairline); border-radius: 6px; color: var(--color-ink);
+      font-size: 15px; padding: 11px 16px; width: min(260px, 70vw); letter-spacing: 0.5px;
+      transition: border-color var(--dur-fast) var(--ease-out); }
+    #seed-input::placeholder { color: var(--color-ink-faint); }
+    #seed-input:hover { border-color: var(--color-ink-faint); }
+    .btn-primary, .btn-ghost { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 3px;
+      text-transform: uppercase; border-radius: 6px; padding: 11px 26px;
+      transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out),
+        color var(--dur-fast) var(--ease-out); }
+    .btn-primary { background: oklch(75% 0.12 75 / 0.12); color: var(--color-accent);
+      border: 1px solid var(--color-accent-dim); }
+    .btn-primary:hover { background: oklch(75% 0.12 75 / 0.24); border-color: var(--color-accent); }
+    .btn-primary:active { transform: translateY(1px); }
+    .btn-ghost { background: none; color: var(--color-ink-dim); border: 1px solid var(--hairline); }
+    .btn-ghost:hover { color: var(--color-ink); border-color: var(--color-ink-faint); }
+    .btn-ghost:active { transform: translateY(1px); }
+    #btn-continue { display: none; }
+    #title-screen .note { margin-top: var(--space-6); font-size: 13px; color: var(--color-ink-faint);
+      max-width: 520px; line-height: 1.8; }
+    #title-screen .note em { color: var(--color-ink-dim); font-style: italic; }
+    #title-controls { margin-top: var(--space-6); font-size: 11.5px; color: var(--color-ink-faint);
+      line-height: 2.2; letter-spacing: 0.3px; }
+
+    #death-screen { position: absolute; inset: 0; z-index: 35; display: none; pointer-events: auto;
+      flex-direction: column; align-items: center; justify-content: center; text-align: center;
+      background: radial-gradient(ellipse at center, oklch(14% 0.05 25 / 0.9) 0%, oklch(6% 0.02 25 / 0.96) 75%);
+      padding: 0 6vw; }
+    #death-screen h1 { font-family: var(--font-display); font-weight: 500; font-size: clamp(30px, 5.5vw, 52px);
+      letter-spacing: clamp(4px, 1vw, 12px); color: oklch(60% 0.16 25); text-indent: clamp(4px, 1vw, 12px); }
+    #death-screen p { margin-top: var(--space-4); font-size: 14.5px; color: var(--color-ink-dim);
+      max-width: 460px; line-height: 1.7; }
+    #death-screen button { margin-top: var(--space-6); }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 120ms !important; }
+      #transition { transition-duration: 150ms; }
+      .toast { animation-duration: 5.6s !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="vignette"></div>
+    <div id="damage-flash"></div>
+
+    <div id="hud">
+      <div id="depth-plate">
+        <div class="depth" id="hud-depth"></div>
+        <div class="region" id="hud-region"></div>
+        <div class="epithet" id="hud-epithet"></div>
+      </div>
+
+      <div id="vitals">
+        <div class="bar-row" id="row-hp"><span class="glyph">♥</span><div class="bar" id="bar-hp"><div style="width:100%"></div></div></div>
+        <div class="bar-row" id="row-st"><span class="glyph">♦</span><div class="bar" id="bar-st"><div style="width:100%"></div></div></div>
+        <div class="bar-row" id="row-mn"><span class="glyph">✦</span><div class="bar" id="bar-mn"><div style="width:100%"></div></div></div>
+        <div class="bar-row" id="row-lt"><span class="glyph">☼</span><div class="bar" id="bar-lt"><div style="width:100%"></div></div></div>
+        <div id="needs">
+          <span id="need-food"></span><span id="need-water"></span><span id="need-arrows"></span>
+        </div>
+        <div id="injury-tag"></div>
+      </div>
+
+      <div id="weapon-plate">
+        <div class="wslot" id="w-sword"><span class="ico">†</span><span class="num">1</span></div>
+        <div class="wslot" id="w-bow"><span class="ico">➶</span><span class="num">2</span></div>
+        <div class="wslot" id="w-aether"><span class="ico">✧</span><span class="num">3</span></div>
+      </div>
+
+      <div id="crosshair"></div>
+      <div id="prompt"></div>
+      <div id="lock-hint">click to look around</div>
+      <div id="toast-stack"></div>
+
+      <div id="controls-hint">
+        <span class="kbd">WASD</span> move · <span class="kbd">⇧</span> run · <span class="kbd">␣</span> jump / climb<br/>
+        <span class="kbd">LMB</span> attack · <span class="kbd">RMB</span> block / aim · <span class="kbd">Q</span> dodge · <span class="kbd">T</span> torch<br/>
+        <span class="kbd">E</span> interact · <span class="kbd">C</span> camp · <span class="kbd">I</span> pack · <span class="kbd">J</span> codex
+      </div>
+    </div>
+
+    <div id="transition">
+      <div class="t-inner">
+        <div class="t-depth" id="t-depth"></div>
+        <div class="t-name" id="t-name"></div>
+        <div class="t-epithet" id="t-epithet"></div>
+        <div class="t-rule"></div>
+        <div class="t-purpose" id="t-purpose"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-doc"><div class="panel-inner">
+      <span class="close-hint"><span class="kbd">E</span> / <span class="kbd">ESC</span> close</span>
+      <h1 id="doc-title"></h1><div class="sub" id="doc-sub"></div>
+      <div class="doc-body" id="doc-body"></div>
+      <div class="doc-source" id="doc-source"></div>
+    </div></div>
+
+    <div class="panel" id="panel-inv"><div class="panel-inner">
+      <span class="close-hint"><span class="kbd">I</span> / <span class="kbd">ESC</span> close</span>
+      <h1>Expedition Pack</h1><div class="sub" id="inv-weight"></div>
+      <div class="tabs" id="inv-tabs"></div>
+      <div id="inv-list"></div>
+    </div></div>
+
+    <div class="panel" id="panel-codex"><div class="panel-inner">
+      <span class="close-hint"><span class="kbd">J</span> / <span class="kbd">ESC</span> close</span>
+      <h1>Explorer's Codex</h1><div class="sub">Everything here was learned, not given.</div>
+      <div class="tabs" id="codex-tabs"></div>
+      <div id="codex-body"></div>
+    </div></div>
+
+    <div class="panel" id="panel-camp"><div class="panel-inner">
+      <span class="close-hint"><span class="kbd">ESC</span> close</span>
+      <h1 id="camp-title">Camp</h1><div class="sub" id="camp-sub"></div>
+      <div id="camp-body"></div>
+    </div></div>
+
+    <div id="death-screen">
+      <h1>THE ABYSS KEEPS YOU</h1>
+      <p id="death-cause"></p>
+      <p>Half your supplies spill where you fall. The world remembers everything you changed.</p>
+      <button id="btn-respawn" class="btn-primary">Wake at the last camp</button>
+    </div>
+
+    <div id="title-screen">
+      <h1>ABYSS</h1>
+      <h2>The Infinite Below</h2>
+      <div class="seed-row">
+        <input id="seed-input" placeholder="world seed — any words" autocomplete="off" spellcheck="false" />
+        <button id="btn-descend" class="btn-primary">Descend</button>
+        <button id="btn-continue" class="btn-ghost">Continue</button>
+      </div>
+      <div class="note">
+        Every world is grown from its seed — its geology, its buried empires, its wars and floods
+        and journals, its species. Nothing you will read down there is decoration: <em>every
+        inscription cites an event the simulation recorded.</em> Sources disagree. Bring light.
+      </div>
+      <div id="title-controls">
+        <span class="kbd">WASD</span> move &nbsp; <span class="kbd">E</span> interact &nbsp;
+        <span class="kbd">T</span> torch &nbsp; <span class="kbd">C</span> camp &nbsp;
+        <span class="kbd">I</span> pack &nbsp; <span class="kbd">J</span> codex
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
