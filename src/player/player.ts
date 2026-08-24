@@ -9,6 +9,7 @@ import { AABB } from "../world/structures";
 import { Creature } from "../ai/creature-ai";
 import { Loadout } from "./equipment";
 import { Audio } from "../audio/audio";
+import { prefersReducedMotion } from "../core/reduced-motion";
 
 export interface WorldQuery {
   heightAt(x: number, z: number): number;
@@ -256,8 +257,14 @@ export class Player {
     const radius = this.loadout.lightRadius();
     this.torchLight.visible = this.torchOn;
     this.torchLight.distance = 34 * radius;
+    // The flicker is a ~1.6Hz brightness pulse across the whole field of view
+    // in an otherwise pitch-dark game — pure atmosphere, and the strongest
+    // constant motion on screen. Reduced motion holds the flame steady at the
+    // flicker's midpoint; the light itself, its radius, and the fuel-driven
+    // dimming (the parts that carry information) are untouched.
+    const flicker = prefersReducedMotion() ? 1 : 0.75 + 0.25 * Math.sin(performance.now() * 0.01);
     this.torchLight.intensity = 55 * radius
-      * (0.75 + 0.25 * Math.sin(performance.now() * 0.01))
+      * flicker
       * Math.min(1, this.torchFuel / 10 + 0.6);
 
     // Gravity / swim.
