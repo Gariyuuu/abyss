@@ -12,6 +12,7 @@
 
 import * as THREE from "three";
 import { RNG } from "../core/rng";
+import { prefersReducedMotion } from "../core/reduced-motion";
 import { personName } from "../core/names";
 import { Civ, History } from "../gen/history";
 import { DocSpec } from "../gen/lore";
@@ -285,8 +286,12 @@ export class CompanionActor {
         this.attackCd = 2.0;
       }
     } else {
-      // Trail the player, offset so they don't shove you.
-      const back = new THREE.Vector3(Math.sin(this.bob * 0.7), 0, Math.cos(this.bob * 0.7)).multiplyScalar(2.4);
+      // Trail the player, offset so they don't shove you. The offset normally
+      // orbits (~9s period), which reads as companions endlessly circling you
+      // in the periphery. Under reduced motion the offset is fixed: they still
+      // follow, fight and stay out of your way, they just hold one bearing.
+      const orbit = prefersReducedMotion() ? 0 : this.bob * 0.7;
+      const back = new THREE.Vector3(Math.sin(orbit), 0, Math.cos(orbit)).multiplyScalar(2.4);
       goal = playerPos.clone().add(back);
       speed = pos.distanceTo(playerPos) > 12 ? 7.5 : 4.4; // catch up if left behind
     }
