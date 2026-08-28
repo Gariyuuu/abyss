@@ -39,6 +39,47 @@
       --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
       --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
       --dur-fast: 140ms; --dur-med: 260ms; --dur-slow: 600ms;
+
+      /* ---- PORTFOLIO DESIGN SYSTEM · semantic bridge to MASTER v1.2 --------
+       * abyss does NOT vendor MASTER.css, deliberately. The system exists to
+       * supply what a repo is missing, and abyss is missing none of it: it
+       * already authors a :focus-visible outline (one of only 2 in 43 repos),
+       * `overflow: clip` on html+body (G34), overflow-wrap on display type
+       * (G51 -- the only repo in its window that passes), a real named spacing
+       * scale, and 100% OKLCH tokens with zero hex. Importing MASTER here would
+       * add a --radius ramp and a --text ramp that nothing reads, which is
+       * exactly the dead-token problem the system's own README bans, plus a
+       * second focus rule competing with the one that already works.
+       *
+       * So the system's NAMES are mapped onto abyss's authored VALUES instead.
+       * Every line below is an alias. Nothing renders differently.
+       * --space-1..7 above is the scale MASTER's README names as the only one
+       * in 43 repos actually in use; it is propagated FROM here, not TO here. */
+      --background: var(--color-void);
+      --foreground: var(--color-ink);
+      --card: var(--color-paper);
+      --popover: var(--color-paper-2);
+      --muted: var(--color-paper-2);
+      --muted-foreground: var(--color-ink-dim);
+      --border: var(--hairline);
+      /* NOT var(--hairline): that renders 1.29:1 against the composited panel,
+       * i.e. the boundary telling a player where the seed field is was very
+       * nearly invisible. Same defect class as C7 in the shadcn repos, found in
+       * hand-written CSS. Opaque, abyss's own hue 75, chroma kept to 0.02 so it
+       * reads as a hairline and not as a brand element. 3.20:1 rendered.
+       * --hairline itself is UNTOUCHED and still draws every decorative divider,
+       * panel edge, kbd cap and weapon slot -- those are dividers, not control
+       * boundaries, and C7 deliberately leaves them alone. */
+      --input: oklch(48% 0.02 75);
+      --ring: var(--color-focus);          /* authored, 10.08-10.94:1 on every surface */
+      --ring-width: 2px;
+      --ring-offset: 2px;
+      --accent: var(--color-accent);
+      --accent-ink: var(--color-void);     /* text ON the amber accent fill */
+      --duration-fast: var(--dur-fast);
+      --duration: var(--dur-med);
+      --duration-slow: var(--dur-slow);
+      --ease: var(--ease-out);
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: clip; background: var(--color-void); }
@@ -172,8 +213,17 @@
       100% { opacity: 0; }
     }
 
+    /* --color-ink-faint (2.82:1) is abyss's deliberate barely-there register and
+     * stays exactly as authored everywhere else -- dimming IS the aesthetic here.
+     * This one element is the documented exception (DESIGN-AUDIT-W9, dagger note):
+     * it prints the player's OWN KEY BINDINGS, and :hover is the only recovery in
+     * a pointer-locked game where hovering a corner is not a natural gesture.
+     * Measured as RENDERED, with the opacity: 0.85 composited over --color-void
+     * rather than read statically: ink-faint 2.38:1 -> ink-dim 5.00:1.
+     * The opacity is KEPT: the visual recession is the point, and ink-dim clears
+     * 4.5:1 with it still applied. */
     #controls-hint { position: absolute; right: clamp(14px, 2vw, 26px); top: clamp(12px, 2.5vh, 24px);
-      font-size: 11px; color: var(--color-ink-faint); text-align: right; line-height: 2.1;
+      font-size: 11px; color: var(--color-ink-dim); text-align: right; line-height: 2.1;
       opacity: 0.85; transition: opacity var(--dur-med) var(--ease-out); }
     #controls-hint:hover { opacity: 1; }
     #controls-hint .kbd { margin-left: 3px; }
@@ -267,7 +317,7 @@
     .seed-row { margin-top: var(--space-7); display: flex; gap: var(--space-3); align-items: stretch;
       flex-wrap: wrap; justify-content: center; }
     #seed-input { font-family: var(--font-body); background: oklch(0% 0 0 / 0.45);
-      border: 1px solid var(--hairline); border-radius: 6px; color: var(--color-ink);
+      border: 1px solid var(--input); border-radius: 6px; color: var(--color-ink);
       font-size: 15px; padding: 11px 16px; width: min(260px, 70vw); letter-spacing: 0.5px;
       transition: border-color var(--dur-fast) var(--ease-out); }
     #seed-input::placeholder { color: var(--color-ink-faint); }
