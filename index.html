@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ABYSS: The Infinite Below</title>
   <meta name="description" content="A generative RPG. Every floor has a reason to exist." />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🕳️</text></svg>" />
+  <!-- A drawn mark, not an emoji: the emoji renders as a different glyph on every
+       platform and carries none of the amber identity. Concentric shafts falling away. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23131110'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%23c99a4e' stroke-opacity='.35' stroke-width='1.5'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%23c99a4e' stroke-opacity='.6' stroke-width='1.5'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23c99a4e'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -144,12 +146,17 @@
     #depth-plate .epithet { font-size: 12px; color: var(--color-ink-faint); margin-top: 2px; letter-spacing: 0.5px; }
 
     #vitals { position: absolute; left: clamp(14px, 2vw, 26px); bottom: clamp(14px, 2.5vh, 26px);
-      width: min(250px, 42vw); background: oklch(10% 0.01 60 / 0.72);
+      width: min(250px, 42vw); background: oklch(10% 0.01 60 / 0.9);
       border: 1px solid var(--hairline-faint); border-radius: 6px;
-      padding: var(--space-3) var(--space-3) var(--space-2); backdrop-filter: blur(6px); }
+      padding: var(--space-3) var(--space-3) var(--space-2); }
     .bar-row { display: grid; grid-template-columns: 16px 1fr; gap: var(--space-2);
       align-items: center; margin-bottom: 6px; }
-    .bar-row .glyph { font-size: 11px; text-align: center; color: var(--color-ink-faint); line-height: 1; }
+    .bar-row .glyph { display: flex; align-items: center; justify-content: center;
+      color: var(--color-ink-dim); line-height: 0; }
+    .bar-row .glyph svg { width: 13px; height: 13px; }
+    /* The icon takes the bar's own colour when that vital is critical, so the
+     * row reads as one unit rather than a grey label beside a red bar. */
+    .bar-row.low .glyph { color: oklch(68% 0.17 30); }
     .bar { height: 7px; background: oklch(6% 0.008 60 / 0.9); border-radius: 3px;
       overflow: clip; position: relative; }
     .bar > div { height: 100%; border-radius: 3px; transition: width var(--dur-med) var(--ease-out); }
@@ -171,11 +178,12 @@
     #weapon-plate { position: absolute; right: clamp(14px, 2vw, 26px); bottom: clamp(14px, 2.5vh, 26px);
       display: flex; gap: var(--space-2); }
     .wslot { width: 40px; height: 40px; border: 1px solid var(--hairline-faint); border-radius: 6px;
-      background: oklch(10% 0.01 60 / 0.72); backdrop-filter: blur(6px);
+      background: oklch(10% 0.01 60 / 0.88);
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       color: var(--color-ink-faint); transition: border-color var(--dur-fast) var(--ease-out),
         color var(--dur-fast) var(--ease-out); }
-    .wslot .ico { font-size: 15px; line-height: 1; }
+    .wslot .ico { display: flex; align-items: center; justify-content: center; line-height: 0; }
+    .wslot .ico svg { width: 16px; height: 16px; }
     .wslot .num { font-family: var(--font-mono); font-size: 8.5px; margin-top: 2px; opacity: 0.7; }
     .wslot.active { border-color: var(--color-accent-dim); color: var(--color-accent); }
 
@@ -185,7 +193,7 @@
 
     #prompt { position: absolute; bottom: 26%; left: 50%; transform: translate(-50%, 4px);
       font-size: 14.5px; letter-spacing: 0.5px; color: var(--color-ink);
-      background: oklch(10% 0.01 60 / 0.82); backdrop-filter: blur(6px);
+      background: oklch(10% 0.01 60 / 0.94);
       padding: 8px 18px; border: 1px solid var(--hairline); border-radius: 6px;
       display: none; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out),
         transform var(--dur-fast) var(--ease-out); max-width: min(560px, 84vw); text-align: center; }
@@ -200,7 +208,7 @@
       display: flex; flex-direction: column; align-items: center; gap: var(--space-2);
       width: min(620px, 90vw); }
     .toast { font-size: 13.5px; letter-spacing: 0.3px; color: var(--color-ink);
-      background: oklch(10% 0.01 60 / 0.85); backdrop-filter: blur(6px);
+      background: oklch(10% 0.01 60 / 0.94);
       border: 1px solid var(--hairline-faint); border-left: 2px solid var(--color-ink-faint);
       border-radius: 4px; padding: 7px 16px; max-width: 100%;
       animation: toast-in 5.6s var(--ease-out) forwards; text-align: center; }
@@ -230,7 +238,7 @@
 
     /* ---------- Panels ---------- */
     .panel { position: absolute; inset: 0; z-index: 20; display: none; pointer-events: auto;
-      background: oklch(4% 0.006 60 / 0.78); overflow-y: auto; backdrop-filter: blur(4px); }
+      background: oklch(4% 0.006 60 / 0.93); overflow-y: auto; }
     .panel.open { display: block; }
     .panel-inner { max-width: 880px; margin: 5vh auto 8vh; padding: var(--space-7) clamp(20px, 5vw, 56px);
       background: oklch(11% 0.012 60 / 0.97); border: 1px solid var(--hairline);
@@ -297,6 +305,41 @@
     .equipped-tag { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 1.5px;
       color: var(--color-life); margin-left: var(--space-2); vertical-align: 1px; }
 
+
+    /* ---------- Boot screen ----------
+     * VENDORED PATTERN from ~/Projects/.design-system/W3-HUD.css v1.0 (§2),
+     * retuned to abyss's tokens. abyss keeps all of its CSS in this one file
+     * deliberately, so the pattern is inlined rather than imported; re-sync by
+     * hand if the source changes.
+     *
+     * Why this exists: worldgen is synchronous. Pressing Descend used to freeze
+     * the tab -- History(seed) builds an entire empire chronology, then the
+     * first floor's terrain is meshed -- and the only feedback was the title
+     * screen sitting there looking broken. The bar is DETERMINATE because the
+     * stages are real and known; it is not a timer. */
+    #boot-screen { position: absolute; inset: 0; z-index: 45; display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      background:
+        radial-gradient(ellipse 90% 55% at 50% 118%, oklch(28% 0.06 60 / 0.4) 0%, transparent 65%),
+        var(--color-void);
+      text-align: center; padding: 0 6vw; pointer-events: auto; }
+    #boot-screen.on { display: flex; }
+    #boot-screen.leaving { opacity: 0; transition: opacity 420ms var(--ease-out); pointer-events: none; }
+    .boot-inner { width: min(340px, 100%); display: flex; flex-direction: column;
+      align-items: center; gap: var(--space-4); }
+    .boot-mark { font-family: var(--font-display); font-weight: 400; font-size: 34px;
+      letter-spacing: 14px; text-indent: 14px; color: var(--color-ink); line-height: 1; }
+    .boot-bar { position: relative; width: 100%; height: 2px; border-radius: 1px;
+      background: var(--hairline-faint); overflow: clip; }
+    /* Scales on X rather than animating width: no layout work per frame. */
+    .boot-bar > i { position: absolute; inset: 0; transform-origin: left center;
+      transform: scaleX(var(--p, 0)); background: var(--color-accent);
+      transition: transform 260ms var(--ease-out); }
+    .boot-status { font-family: var(--font-mono); font-size: 11px; letter-spacing: 3px;
+      text-transform: uppercase; color: var(--color-ink-dim); min-height: 1.2em; }
+    .boot-seed { font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-faint);
+      letter-spacing: 1px; }
+
     /* ---------- Title / Death ---------- */
     #title-screen { position: absolute; inset: 0; z-index: 40; pointer-events: auto;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -308,6 +351,16 @@
     #title-screen::after { content: ""; position: absolute; inset: 0; pointer-events: none;
       background: radial-gradient(ellipse 45% 90% at 50% 130%, transparent 30%, oklch(0% 0 0 / 0.55) 100%); }
     #title-screen > * { position: relative; z-index: 1; }
+    /* Staggered entrance, transform + opacity only. The canvas is not rendering
+     * yet at this point, so this is the one place an animation is free. */
+    #title-screen > *:not(::after) { opacity: 0; transform: translateY(10px);
+      animation: title-rise 640ms var(--ease-out) forwards; }
+    #title-screen > h1 { animation-delay: 60ms; }
+    #title-screen > h2 { animation-delay: 180ms; }
+    #title-screen > .seed-row { animation-delay: 300ms; }
+    #title-screen > .note { animation-delay: 400ms; }
+    #title-screen > #title-controls { animation-delay: 480ms; }
+    @keyframes title-rise { to { opacity: 1; transform: none; } }
     #title-screen h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(56px, 11vw, 108px);
       letter-spacing: clamp(10px, 2.4vw, 26px); color: var(--color-ink); text-indent: clamp(10px, 2.4vw, 26px);
       text-shadow: 0 0 60px oklch(75% 0.12 75 / 0.25); line-height: 1; }
@@ -350,10 +403,33 @@
       max-width: 460px; line-height: 1.7; }
     #death-screen button { margin-top: var(--space-6); }
 
+    /* ---------- Reduced motion ----------
+     * The clamp is deliberately NOT blanket. Three animations here are the only
+     * signal a piece of state exists, and freezing them removes information
+     * rather than removing motion:
+     *   .bar-row.low   the vital that is about to kill you
+     *   #needs .crit   the need that is about to kill you
+     *   #lock-hint     the "click to look around" cue in a pointer-locked game
+     * A screen-level reveal whose first keyframe is opacity:0 must RESOLVE, not
+     * stop -- stopping it leaves the title screen blank. See MASTER.css v1.2. */
     @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 120ms !important; }
+      *:not([data-motion-critical]),
+      *:not([data-motion-critical])::before,
+      *:not([data-motion-critical])::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 120ms !important;
+        scroll-behavior: auto !important;
+      }
+      /* resolve, don't remove */
+      #title-screen > * { opacity: 1 !important; transform: none !important; animation-delay: 0ms !important; }
       #transition { transition-duration: 150ms; }
+      /* feedback survives */
       .toast { animation-duration: 5.6s !important; }
+      .bar-row.low .bar > div,
+      #needs .crit,
+      #lock-hint.on { animation-duration: 1.6s !important; animation-iteration-count: infinite !important; }
+      [role="progressbar"] > i { transition-duration: 120ms !important; }
     }
   </style>
 </head>
@@ -370,10 +446,10 @@
       </div>
 
       <div id="vitals">
-        <div class="bar-row" id="row-hp"><span class="glyph">♥</span><div class="bar" id="bar-hp"><div style="width:100%"></div></div></div>
-        <div class="bar-row" id="row-st"><span class="glyph">♦</span><div class="bar" id="bar-st"><div style="width:100%"></div></div></div>
-        <div class="bar-row" id="row-mn"><span class="glyph">✦</span><div class="bar" id="bar-mn"><div style="width:100%"></div></div></div>
-        <div class="bar-row" id="row-lt"><span class="glyph">☼</span><div class="bar" id="bar-lt"><div style="width:100%"></div></div></div>
+        <div class="bar-row" id="row-hp"><span class="glyph" data-icon="heart" title="Health"></span><div class="bar" id="bar-hp"><div style="width:100%"></div></div></div>
+        <div class="bar-row" id="row-st"><span class="glyph" data-icon="zap" title="Stamina"></span><div class="bar" id="bar-st"><div style="width:100%"></div></div></div>
+        <div class="bar-row" id="row-mn"><span class="glyph" data-icon="sparkles" title="Aether"></span><div class="bar" id="bar-mn"><div style="width:100%"></div></div></div>
+        <div class="bar-row" id="row-lt"><span class="glyph" data-icon="flame" title="Torch"></span><div class="bar" id="bar-lt"><div style="width:100%"></div></div></div>
         <div id="needs">
           <span id="need-food"></span><span id="need-water"></span><span id="need-arrows"></span>
         </div>
@@ -381,9 +457,9 @@
       </div>
 
       <div id="weapon-plate">
-        <div class="wslot" id="w-sword"><span class="ico">†</span><span class="num">1</span></div>
-        <div class="wslot" id="w-bow"><span class="ico">➶</span><span class="num">2</span></div>
-        <div class="wslot" id="w-aether"><span class="ico">✧</span><span class="num">3</span></div>
+        <div class="wslot" id="w-sword" title="Blade — 1"><span class="ico" data-icon="sword"></span><span class="num">1</span></div>
+        <div class="wslot" id="w-bow" title="Bow — 2"><span class="ico" data-icon="target"></span><span class="num">2</span></div>
+        <div class="wslot" id="w-aether" title="Aether — 3"><span class="ico" data-icon="wand"></span><span class="num">3</span></div>
       </div>
 
       <div id="crosshair"></div>
@@ -440,6 +516,16 @@
       <p id="death-cause"></p>
       <p>Half your supplies spill where you fall. The world remembers everything you changed.</p>
       <button id="btn-respawn" class="btn-primary">Wake at the last camp</button>
+    </div>
+
+    <div id="boot-screen">
+      <div class="boot-inner">
+        <div class="boot-mark">ABYSS</div>
+        <div class="boot-bar" id="boot-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+             aria-valuenow="0" aria-label="Generating the world"><i></i></div>
+        <div class="boot-status" id="boot-status">reading the strata</div>
+        <div class="boot-seed" id="boot-seed"></div>
+      </div>
     </div>
 
     <div id="title-screen">

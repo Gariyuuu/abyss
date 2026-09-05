@@ -5,6 +5,9 @@
 import * as THREE from "three";
 import { History } from "./gen/history";
 import { Region, generateRegion } from "./gen/regions";
+import {
+  iconHeart, iconZap, iconSparkles, iconFlame, iconSword, iconTarget, iconWand,
+} from "./ui/icons";
 import { buildTerrain, TerrainData } from "./world/terrain";
 import { populate, PopulatedRegion, Interactable } from "./world/populate";
 import { Player } from "./player/player";
@@ -797,6 +800,65 @@ class Game {
 import { campfireProp } from "./world/structures";
 function awaitStructures() { return { campfireProp }; }
 
+// ------------------------------------------------------------------ icons ----
+// One pass over the HUD's icon mounts. Runs before the title screen so the
+// slots are never seen empty.
+{
+  const ICONS: Record<string, string> = {
+    heart: iconHeart, zap: iconZap, sparkles: iconSparkles, flame: iconFlame,
+    sword: iconSword, target: iconTarget, wand: iconWand,
+  };
+  for (const el of document.querySelectorAll<HTMLElement>("[data-icon]")) {
+    const svg = ICONS[el.dataset.icon ?? ""];
+    if (svg) el.innerHTML = svg;
+  }
+}
+
+// ------------------------------------------------------------------- boot ----
+/**
+ * Boot overlay driver.
+ *
+ * Worldgen is synchronous and not cheap: History(seed) builds an entire empire
+ * chronology, then the first floor's terrain is generated and meshed. Run
+ * straight off the click handler that locks the tab for the whole of it and the
+ * title screen just sits there looking broken.
+ *
+ * `paint()` yields to the compositor between stages -- two rAFs, because one
+ * only guarantees the frame was *scheduled* -- so each stage label and each bar
+ * step is actually seen. The bar is determinate over known stages; it is not a
+ * timer, and it never reports progress the machine has not made.
+ */
+const bootEl = document.getElementById("boot-screen")!;
+const bootBar = document.getElementById("boot-bar")!;
+const bootFill = bootBar.querySelector("i") as HTMLElement;
+const bootStatus = document.getElementById("boot-status")!;
+const bootSeed = document.getElementById("boot-seed")!;
+
+const paint = () =>
+  new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+function bootStep(p: number, label: string) {
+  bootFill.style.setProperty("--p", String(p));
+  bootBar.setAttribute("aria-valuenow", String(Math.round(p * 100)));
+  bootStatus.textContent = label;
+}
+
+async function withBoot(seed: string, label: string, run: () => void) {
+  bootEl.classList.remove("leaving");
+  bootEl.classList.add("on");
+  bootSeed.textContent = seed;
+  bootStep(0.08, label);
+  await paint();
+  bootStep(0.45, "raising the first floor");
+  await paint();
+  run();                      // the expensive, synchronous part
+  bootStep(1, "descending");
+  await paint();
+  bootEl.classList.add("leaving");
+  // Matches the 420ms opacity transition on #boot-screen.leaving.
+  window.setTimeout(() => bootEl.classList.remove("on", "leaving"), 440);
+}
+
 // ---------------------------------------------------------------- title ----
 
 const game = new Game();
@@ -806,11 +868,14 @@ const saved = loadGame();
 if (saved) {
   const btn = document.getElementById("btn-continue")!;
   btn.style.display = "inline-block";
-  btn.onclick = () => { game.audio.start(); game.continueGame(saved); };
+  btn.onclick = () => {
+    game.audio.start();
+    void withBoot(saved.seed, "waking the expedition", () => game.continueGame(saved));
+  };
 }
 document.getElementById("btn-descend")!.onclick = () => {
   game.audio.start(); // browsers only allow audio to begin inside a user gesture
   const input = (document.getElementById("seed-input") as HTMLInputElement).value.trim();
   const seed = input || `abyss-${Math.floor(Math.random() * 1e9).toString(36)}`;
-  game.newGame(seed);
+  void withBoot(seed, "reading the strata", () => game.newGame(seed));
 };
